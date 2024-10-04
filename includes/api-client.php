@@ -72,4 +72,10 @@ class Mailblaze_WC_API_Client
         $response = $this->request('/lists');
         return $response ? $response['lists'] : [];
     }
+
+    public function send_event($data)
+    {
+        $response = $this->request('/events', 'POST', $data);
+        return $response ? $response : false;
+    }
 }

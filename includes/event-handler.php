@@ -41,13 +41,15 @@ class Mailblaze_WC_Event_Handler {
 
     public function handle_new_order( $order_id ) {
         $order = wc_get_order( $order_id );
-        // Prepare data to send to Mailblaze
         $data = [
-            'store_id' => $this->store_id,
-            'event'    => 'new_order',
-            'order'    => $this->prepare_order_data( $order ),
+            // ... prepare data ...
         ];
-        $this->api_client->send_event( $data );
+        try {
+            $this->api_client->send_event( $data );
+        } catch ( Exception $e ) {
+            // Log the error
+            error_log( 'Mailblaze Integration Error: ' . $e->getMessage() );
+        }
     }
 
     public function handle_order_status_changed( $order_id, $old_status, $new_status, $order ) {
@@ -74,16 +76,32 @@ class Mailblaze_WC_Event_Handler {
     }
 
     private function prepare_order_data( $order ) {
-        // Extract necessary order data
         return [
             'order_id'      => $order->get_id(),
             'status'        => $order->get_status(),
             'total'         => $order->get_total(),
             'currency'      => $order->get_currency(),
-            'created_at'    => $order->get_date_created()->date( 'Y-m-d H:i:s' ),
+            'created_at'    => $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i:s' ) : '',
             'billing_email' => $order->get_billing_email(),
+            'billing_first_name' => $order->get_billing_first_name(),
+            'billing_last_name'  => $order->get_billing_last_name(),
+            'items'         => $this->get_order_items( $order ),
             // Add more fields as needed
         ];
+    }
+    
+    private function get_order_items( $order ) {
+        $items = [];
+        foreach ( $order->get_items() as $item_id => $item ) {
+            $product = $item->get_product();
+            $items[] = [
+                'product_id' => $product->get_id(),
+                'name'       => $product->get_name(),
+                'quantity'   => $item->get_quantity(),
+                'total'      => $item->get_total(),
+            ];
+        }
+        return $items;
     }
 
     private function prepare_user_data( $user ) {
