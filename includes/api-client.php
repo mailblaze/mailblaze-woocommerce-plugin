@@ -54,7 +54,6 @@ class Mailblaze_WC_API_Client
         }
     }
 
-
     public function get_stores()
     {
         $response = $this->request('/stores');
@@ -73,9 +72,20 @@ class Mailblaze_WC_API_Client
         return $response ? $response['lists'] : [];
     }
 
-    public function send_event($data)
+    public function send_event($event_type, $data)
     {
-        $response = $this->request('/events', 'POST', $data);
-        return $response ? $response : false;
+        $payload = [
+            'event_type' => $event_type,
+            'data' => $data,
+            'platform' => 'woocommerce'
+        ];
+
+        $response = $this->request('/events', 'POST', $payload);
+        
+        if ($response === false) {
+            throw new Exception('Failed to send event to Mailblaze API');
+        }
+
+        return $response;
     }
 }

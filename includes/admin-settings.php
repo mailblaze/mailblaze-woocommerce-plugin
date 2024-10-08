@@ -87,6 +87,26 @@ class Mailblaze_WC_Admin_Settings
                             <label>
                                 <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="user_register" <?php checked(in_array('user_register', $enabled_hooks)); ?> />
                                 New Customer Registered
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="product_purchase" <?php checked(in_array('product_purchase', $enabled_hooks)); ?> />
+                                Product Purchased
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="cart_abandoned" <?php checked(in_array('cart_abandoned', $enabled_hooks)); ?> />
+                                Cart Abandoned
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="coupon_used" <?php checked(in_array('coupon_used', $enabled_hooks)); ?> />
+                                Coupon Used
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="subscription_created" <?php checked(in_array('subscription_created', $enabled_hooks)); ?> />
+                                Subscription Created
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="subscription_cancelled" <?php checked(in_array('subscription_cancelled', $enabled_hooks)); ?> />
+                                Subscription Cancelled
                             </label>
                         </td>
                     </tr>
@@ -170,14 +190,18 @@ class Mailblaze_WC_Admin_Settings
                 <table class="form-table">
                     <tr valign="top">
                         <th scope="row"><label for="mailblaze_wc_store_name">Store Name</label></th>
-                        <td><input type="text" id="mailblaze_wc_store_name" name="mailblaze_wc_store_name" value="<?php echo esc_attr(get_bloginfo('name')); ?>" class="regular-text" required /></td>
+                        <td><input type="text" id="mailblaze_wc_store_name" name="mailblaze_wc_store_name" value="<?php echo esc_attr(get_option('mailblaze_wc_store_name', get_bloginfo('name'))); ?>" class="regular-text" required /></td>
                     </tr>
                     <tr valign="top">
                         <th scope="row"><label for="mailblaze_wc_mailing_list_id">Select Mailing List</label></th>
                         <td>
                             <select id="mailblaze_wc_mailing_list_id" name="mailblaze_wc_mailing_list_id" required>
-                                <?php foreach ($mailing_lists as $list) : ?>
-                                    <option value="<?php echo esc_attr($list['list_uid']); ?>">
+                                <?php 
+                                $saved_mailing_list_id = get_option('mailblaze_wc_mailing_list_id', '');
+                                foreach ($mailing_lists as $list) : 
+                                    $selected = selected($saved_mailing_list_id, $list['list_uid'], false);
+                                ?>
+                                    <option value="<?php echo esc_attr($list['list_uid']); ?>" <?php echo $selected; ?>>
                                         <?php echo esc_html($list['display_name']); ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -235,6 +259,7 @@ class Mailblaze_WC_Admin_Settings
         if ($response) {
             // Store the store ID and mailing list ID in options
             update_option('mailblaze_wc_mailing_list_id', $mailing_list_id);
+            update_option('mailblaze_wc_store_name', $store_name);
             add_settings_error('mailblaze_wc_errors', 'store_registered', 'Store registered successfully.', 'updated');
             // Redirect to main settings page or display success message
             // You can use wp_redirect() if needed

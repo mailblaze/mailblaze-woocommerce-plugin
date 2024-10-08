@@ -23,32 +23,60 @@ class Mailblaze_WC_Event_Handler {
     }
 
     private function init_hooks() {
-        // Order Created
+        // Existing hooks
         if ( in_array( 'new_order', $this->enabled_hooks ) ) {
             add_action( 'woocommerce_new_order', [ $this, 'handle_new_order' ] );
         }
 
-        // Order Status Changed
         if ( in_array( 'order_status_changed', $this->enabled_hooks ) ) {
             add_action( 'woocommerce_order_status_changed', [ $this, 'handle_order_status_changed' ], 10, 4 );
         }
 
-        // User Registration
         if ( in_array( 'user_register', $this->enabled_hooks ) ) {
             add_action( 'user_register', [ $this, 'handle_user_register' ] );
+        }
+
+        // New hooks
+        if ( in_array( 'product_purchase', $this->enabled_hooks ) ) {
+            add_action( 'woocommerce_order_status_completed', [ $this, 'handle_product_purchase' ] );
+        }
+
+        if ( in_array( 'cart_abandoned', $this->enabled_hooks ) ) {
+            add_action( 'woocommerce_cart_emptied', [ $this, 'handle_cart_abandoned' ] );
+        }
+
+        if ( in_array( 'coupon_used', $this->enabled_hooks ) ) {
+            add_action( 'woocommerce_applied_coupon', [ $this, 'handle_coupon_used' ] );
+        }
+
+        if ( in_array( 'subscription_created', $this->enabled_hooks ) ) {
+            add_action( 'woocommerce_subscription_payment_complete', [ $this, 'handle_subscription_created' ] );
+        }
+
+        if ( in_array( 'subscription_cancelled', $this->enabled_hooks ) ) {
+            add_action( 'woocommerce_subscription_status_cancelled', [ $this, 'handle_subscription_cancelled' ] );
         }
     }
 
     public function handle_new_order( $order_id ) {
         $order = wc_get_order( $order_id );
         $data = [
-            // ... prepare data ...
+            'created' => current_time('mysql'),
+            'name' => 'order.created',
+            'FIELD_TOTAL' => $order->get_total(),
+            'FIELD_ORDER_REF' => $order->get_order_number(),
+            'FIELD_ITEMS' => $this->get_order_items($order),
+            'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
+            'FIELD_SHIPPING_ADDRESS' => $this->get_shipping_address($order),
+            'FIELD_PAYMENT_METHOD' => $order->get_payment_method_title(),
+            'FIELD_CURRENCY' => $order->get_currency()
         ];
+
         try {
-            $this->api_client->send_event( $data );
-        } catch ( Exception $e ) {
+            $this->api_client->send_event($data);
+        } catch (Exception $e) {
             // Log the error
-            error_log( 'Mailblaze Integration Error: ' . $e->getMessage() );
+            error_log('Mailblaze Integration Error: ' . $e->getMessage());
         }
     }
 
@@ -75,6 +103,62 @@ class Mailblaze_WC_Event_Handler {
         $this->api_client->send_event( $data );
     }
 
+    public function handle_product_purchase( $order_id ) {
+        $order = wc_get_order( $order_id );
+        $data = [
+            'store_id' => $this->store_id,
+            'event'    => 'product_purchase',
+            'order'    => $this->prepare_order_data( $order ),
+        ];
+        $this->api_client->send_event( $data );
+    }
+
+    public function handle_cart_abandoned() {
+        if ( ! is_user_logged_in() || WC()->cart->is_empty() ) {
+            return;
+        }
+
+        $user_id = get_current_user_id();
+        $cart = WC()->cart->get_cart();
+
+        $data = [
+            'store_id' => $this->store_id,
+            'event'    => 'cart_abandoned',
+            'user_id'  => $user_id,
+            'cart'     => $this->prepare_cart_data( $cart ),
+        ];
+        $this->api_client->send_event( $data );
+    }
+
+    public function handle_coupon_used( $coupon_code ) {
+        $coupon = new WC_Coupon( $coupon_code );
+        $data = [
+            'store_id'    => $this->store_id,
+            'event'       => 'coupon_used',
+            'coupon_code' => $coupon_code,
+            'discount'    => $coupon->get_amount(),
+        ];
+        $this->api_client->send_event( $data );
+    }
+
+    public function handle_subscription_created( $subscription ) {
+        $data = [
+            'store_id'     => $this->store_id,
+            'event'        => 'subscription_created',
+            'subscription' => $this->prepare_subscription_data( $subscription ),
+        ];
+        $this->api_client->send_event( $data );
+    }
+
+    public function handle_subscription_cancelled( $subscription ) {
+        $data = [
+            'store_id'     => $this->store_id,
+            'event'        => 'subscription_cancelled',
+            'subscription' => $this->prepare_subscription_data( $subscription ),
+        ];
+        $this->api_client->send_event( $data );
+    }
+
     private function prepare_order_data( $order ) {
         return [
             'order_id'      => $order->get_id(),
@@ -90,20 +174,6 @@ class Mailblaze_WC_Event_Handler {
         ];
     }
     
-    private function get_order_items( $order ) {
-        $items = [];
-        foreach ( $order->get_items() as $item_id => $item ) {
-            $product = $item->get_product();
-            $items[] = [
-                'product_id' => $product->get_id(),
-                'name'       => $product->get_name(),
-                'quantity'   => $item->get_quantity(),
-                'total'      => $item->get_total(),
-            ];
-        }
-        return $items;
-    }
-
     private function prepare_user_data( $user ) {
         // Extract necessary user data
         return [
@@ -114,5 +184,46 @@ class Mailblaze_WC_Event_Handler {
             'registered' => $user->user_registered,
             // Add more fields as needed
         ];
+    }
+
+    private function prepare_cart_data( $cart ) {
+        $cart_data = [];
+        foreach ( $cart as $cart_item_key => $cart_item ) {
+            $product = $cart_item['data'];
+            $cart_data[] = [
+                'product_id' => $product->get_id(),
+                'name'       => $product->get_name(),
+                'quantity'   => $cart_item['quantity'],
+                'total'      => $cart_item['line_total'],
+            ];
+        }
+        return $cart_data;
+    }
+
+    private function prepare_subscription_data( $subscription ) {
+        return [
+            'subscription_id' => $subscription->get_id(),
+            'status'          => $subscription->get_status(),
+            'total'           => $subscription->get_total(),
+            'billing_period'  => $subscription->get_billing_period(),
+            'billing_interval' => $subscription->get_billing_interval(),
+            'start_date'      => $subscription->get_date('start'),
+            'next_payment_date' => $subscription->get_date('next_payment'),
+            'customer_id'     => $subscription->get_customer_id(),
+        ];
+    }
+
+
+    private function get_order_items($order) {
+        $items = [];
+        foreach ($order->get_items() as $item) {
+            $items[] = $item->get_name() . ' x ' . $item->get_quantity();
+        }
+        return implode(', ', $items);
+    }
+
+    private function get_shipping_address($order) {
+        $address = $order->get_formatted_shipping_address();
+        return str_replace('<br/>', ', ', $address);
     }
 }
