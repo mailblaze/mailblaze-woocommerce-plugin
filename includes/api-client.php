@@ -8,21 +8,24 @@ class Mailblaze_WC_API_Client
 {
     private $api_key;
     private $api_base = 'http://commerce:3000/commerce'; // Replace with actual API base URL
+    private $site_domain;
 
     public function __construct($api_key)
     {
         $this->api_key = $api_key;
+        $this->site_domain = parse_url(home_url(), PHP_URL_HOST);
     }
 
     private function request($endpoint, $method = 'GET', $data = [])
     {
         $url = $this->api_base . $endpoint;
-
+        
         $args = [
             'method'  => $method,
             'headers' => [
                 'Authorization' => 'Bearer ' . $this->api_key,
                 'Content-Type'  => 'application/json',
+                'X-Store-Domain' => $this->site_domain
             ],
             'timeout' => 30,
         ];
