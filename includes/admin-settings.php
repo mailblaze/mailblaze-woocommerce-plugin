@@ -23,18 +23,24 @@ class Mailblaze_WC_Admin_Settings
             56
         );
 
-        // Only show Register Store submenu if store is not registered
-        $store_id = get_option('mailblaze_wc_store_id', '');
-        if (empty($store_id)) {
-            add_submenu_page(
-                'mailblaze-wc-integration',
-                'Store Configuration',
-                'Store Configuration',
-                'manage_options',
-                'mailblaze-wc-register-store',
-                [$this, 'create_register_store_page']
-            );
-        }
+        add_submenu_page(
+            'mailblaze-wc-integration',
+            'Settings',
+            'Settings',
+            'manage_options',
+            'mailblaze-wc-integration',
+            [$this, 'create_settings_page']
+        );
+
+        // Always show Register Store submenu
+        add_submenu_page(
+            'mailblaze-wc-integration',
+            'Store Configuration',
+            'Store Configuration',
+            'manage_options',
+            'mailblaze-wc-register-store',
+            [$this, 'create_register_store_page']
+        );
     }
 
 
@@ -110,6 +116,17 @@ class Mailblaze_WC_Admin_Settings
                             </label>
                         </td>
                     </tr>
+                    <!-- Opt-in Checkbox Option -->
+                    <tr valign="top">
+                        <th scope="row">Enable Opt-in Checkbox</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enable_optin" value="1" <?php checked(get_option('mailblaze_wc_enable_optin', '0'), '1'); ?> />
+                                Add opt-in checkbox to registration and account pages
+                            </label>
+                            <p class="description">When enabled, an opt-in checkbox will be added to the WooCommerce registration form and account details page.</p>
+                        </td>
+                    </tr>
                 </table>
                 <?php submit_button('Save Settings', 'primary', 'mailblaze_wc_save_settings'); ?>
             </form>
@@ -137,10 +154,71 @@ class Mailblaze_WC_Admin_Settings
             }
         }
 
+        // Save store configuration
+        $store_fields = [
+            'mailblaze_wc_store_name',
+            'mailblaze_wc_store_email',
+            'mailblaze_wc_store_currency',
+            'mailblaze_wc_store_money_format',
+            'mailblaze_wc_store_locale',
+            'mailblaze_wc_store_timezone',
+            'mailblaze_wc_store_phone',
+            'mailblaze_wc_store_address'
+        ];
+
+        foreach ($store_fields as $field) {
+            if (isset($_POST[$field])) {
+                $value = $field === 'mailblaze_wc_store_address' ? sanitize_textarea_field($_POST[$field]) : sanitize_text_field($_POST[$field]);
+                update_option($field, $value);
+            }
+        }
+
         // Save enabled hooks
         $enabled_hooks = isset($_POST['mailblaze_wc_enabled_hooks']) ? (array) $_POST['mailblaze_wc_enabled_hooks'] : [];
         $enabled_hooks = array_map('sanitize_text_field', $enabled_hooks);
         update_option('mailblaze_wc_enabled_hooks', $enabled_hooks);
+
+        // Save opt-in checkbox option
+        $enable_optin = isset($_POST['mailblaze_wc_enable_optin']) ? '1' : '0';
+        update_option('mailblaze_wc_enable_optin', $enable_optin);
+
+        // Update store information in Mailblaze
+        $this->update_store_in_mailblaze();
+    }
+
+    private function update_store_in_mailblaze()
+    {
+        $api_key = get_option('mailblaze_wc_api_key', '');
+        $foreign_store_id = get_option('mailblaze_wc_foreign_store_id', '');
+
+        if (empty($api_key) || empty($foreign_store_id)) {
+            return;
+        }
+
+        $data = [
+            'foreign_store_id' => $foreign_store_id,
+            'name' => get_option('mailblaze_wc_store_name', ''),
+            'email_address' => get_option('mailblaze_wc_store_email', ''),
+            'currency_code' => get_option('mailblaze_wc_store_currency', ''),
+            'money_format' => get_option('mailblaze_wc_store_money_format', ''),
+            'primary_locale' => get_option('mailblaze_wc_store_locale', ''),
+            'timezone' => get_option('mailblaze_wc_store_timezone', ''),
+            'phone' => get_option('mailblaze_wc_store_phone', ''),
+            'address' => get_option('mailblaze_wc_store_address', ''),
+        ];
+
+        try {
+            $api_client = new Mailblaze_WC_API_Client($api_key);
+            $response = $api_client->register_store($data);
+
+            if ($response && isset($response['store_id'])) {
+                add_settings_error('mailblaze_wc_success', 'store_updated', 'Store information updated successfully in Mailblaze.', 'updated');
+            } else {
+                add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mailblaze.', 'error');
+            }
+        } catch (Exception $e) {
+            add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mailblaze: ' . $e->getMessage(), 'error');
+        }
     }
 
     public function create_register_store_page()
@@ -181,7 +259,7 @@ class Mailblaze_WC_Admin_Settings
 
     private function display_register_store_form($mailing_lists)
     {
-    ?>
+        ?>
         <div class="wrap">
             <h1>Register Store with Mailblaze</h1>
             <?php settings_errors('mailblaze_wc_errors'); ?>
@@ -193,78 +271,128 @@ class Mailblaze_WC_Admin_Settings
                         <td><input type="text" id="mailblaze_wc_store_name" name="mailblaze_wc_store_name" value="<?php echo esc_attr(get_option('mailblaze_wc_store_name', get_bloginfo('name'))); ?>" class="regular-text" required /></td>
                     </tr>
                     <tr valign="top">
-                        <th scope="row"><label for="mailblaze_wc_mailing_list_id">Select Mailing List</label></th>
+                        <th scope="row"><label for="mailblaze_wc_store_email">Store Email</label></th>
+                        <td><input type="email" id="mailblaze_wc_store_email" name="mailblaze_wc_store_email" value="<?php echo esc_attr(get_option('admin_email')); ?>" class="regular-text" required /></td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_currency">Currency Code</label></th>
                         <td>
-                            <select id="mailblaze_wc_mailing_list_id" name="mailblaze_wc_mailing_list_id" required>
-                                <?php 
-                                $saved_mailing_list_id = get_option('mailblaze_wc_mailing_list_id', '');
-                                foreach ($mailing_lists as $list) : 
-                                    $selected = selected($saved_mailing_list_id, $list['list_uid'], false);
+                            <select id="mailblaze_wc_store_currency" name="mailblaze_wc_store_currency" required>
+                                <?php
+                                $currencies = get_woocommerce_currencies();
+                                $default_currency = get_woocommerce_currency();
+                                foreach ($currencies as $code => $name) {
+                                    echo '<option value="' . esc_attr($code) . '" ' . selected($default_currency, $code, false) . '>' . esc_html($name . ' (' . $code . ')') . '</option>';
+                                }
                                 ?>
-                                    <option value="<?php echo esc_attr($list['list_uid']); ?>" <?php echo $selected; ?>>
-                                        <?php echo esc_html($list['display_name']); ?>
-                                    </option>
-                                <?php endforeach; ?>
                             </select>
-                            <p class="description">Select the mailing list to associate with this store.</p>
                         </td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_money_format">Money Format</label></th>
+                        <td><input type="text" id="mailblaze_wc_store_money_format" name="mailblaze_wc_store_money_format" value="<?php echo esc_attr(get_woocommerce_currency_symbol()); ?>" class="regular-text" required /></td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_locale">Primary Locale</label></th>
+                        <td><input type="text" id="mailblaze_wc_store_locale" name="mailblaze_wc_store_locale" value="<?php echo esc_attr(get_locale()); ?>" class="regular-text" required /></td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_timezone">Timezone</label></th>
+                        <td><input type="text" id="mailblaze_wc_store_timezone" name="mailblaze_wc_store_timezone" value="<?php echo esc_attr(wp_timezone_string()); ?>" class="regular-text" required /></td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_phone">Store Phone</label></th>
+                        <td><input type="tel" id="mailblaze_wc_store_phone" name="mailblaze_wc_store_phone" value="" class="regular-text" /></td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_store_address">Store Address</label></th>
+                        <td><textarea id="mailblaze_wc_store_address" name="mailblaze_wc_store_address" class="large-text" rows="3"></textarea></td>
                     </tr>
                 </table>
                 <?php submit_button('Register Store', 'primary', 'mailblaze_wc_register_store_submit'); ?>
             </form>
         </div>
-<?php
+        <?php
     }
 
 
     private function process_register_store_form($api_key)
     {
         // Check nonce
-        if (! isset($_POST['mailblaze_wc_nonce']) || ! wp_verify_nonce($_POST['mailblaze_wc_nonce'], 'mailblaze_wc_register_store')) {
+        if (!isset($_POST['mailblaze_wc_nonce']) || !wp_verify_nonce($_POST['mailblaze_wc_nonce'], 'mailblaze_wc_register_store')) {
             add_settings_error('mailblaze_wc_errors', 'invalid_nonce', 'Invalid security token, please try again.', 'error');
             return;
         }
 
         // Sanitize and validate inputs
         $store_name = sanitize_text_field($_POST['mailblaze_wc_store_name']);
-        $mailing_list_id = sanitize_text_field($_POST['mailblaze_wc_mailing_list_id']);
+        $store_email = sanitize_email($_POST['mailblaze_wc_store_email']);
+        $currency_code = sanitize_text_field($_POST['mailblaze_wc_store_currency']);
+        $money_format = sanitize_text_field($_POST['mailblaze_wc_store_money_format']);
+        $primary_locale = sanitize_text_field($_POST['mailblaze_wc_store_locale']);
+        $timezone = sanitize_text_field($_POST['mailblaze_wc_store_timezone']);
+        $phone = sanitize_text_field($_POST['mailblaze_wc_store_phone']);
+        $address = sanitize_textarea_field($_POST['mailblaze_wc_store_address']);
 
-        if (empty($store_name) || empty($mailing_list_id)) {
+        if (empty($store_name) || empty($store_email)) {
             add_settings_error('mailblaze_wc_errors', 'empty_fields', 'Please fill in all required fields.', 'error');
             return;
         }
 
-        // Instantiate API client
-        $api_client = new Mailblaze_WC_API_Client($api_key);
+        // Get or generate a unique store ID
+        $foreign_store_id = get_option('mailblaze_wc_foreign_store_id');
+        if (!$foreign_store_id) {
+            $foreign_store_id = 'wc_' . uniqid();
+            update_option('mailblaze_wc_foreign_store_id', $foreign_store_id);
+        }
 
-        // Get site domain
-        $site_domain = parse_url(home_url(), PHP_URL_HOST);
-
-        // Prepare data for registration
+        // Prepare data for registration or update
         $data = [
-            'name'            => $store_name,
-            'domain'          => $site_domain,
-            'list_uid' => $mailing_list_id,
-            'type'            => 'woocommerce',
+            'foreign_store_id' => $foreign_store_id,
+            'name' => $store_name,
+            'platform' => 'woocommerce',
+            'domain' => parse_url(home_url(), PHP_URL_HOST),
+            'is_syncing' => true,
+            'email_address' => $store_email,
+            'currency_code' => $currency_code,
+            'money_format' => $money_format,
+            'primary_locale' => $primary_locale,
+            'timezone' => $timezone,
+            'phone' => $phone,
+            'address' => $address,
         ];
 
         try {
-            // Send registration request to Mailblaze
+            // Send registration/update request to Mailblaze
+            $api_client = new Mailblaze_WC_API_Client($api_key);
             $response = $api_client->register_store($data);
-        } catch (Exception $e) {
-            add_settings_error('mailblaze_wc_errors', 'registration_failed', 'Failed to register the store: ' . $e->getMessage(), 'error');
-            return;
-        }
 
-        if ($response) {
-            // Store the store ID and mailing list ID in options
-            update_option('mailblaze_wc_mailing_list_id', $mailing_list_id);
-            update_option('mailblaze_wc_store_name', $store_name);
-            add_settings_error('mailblaze_wc_errors', 'store_registered', 'Store registered successfully.', 'updated');
-            // Redirect to main settings page or display success message
-            // You can use wp_redirect() if needed
-        } else {
-            add_settings_error('mailblaze_wc_errors', 'registration_failed', 'Failed to register the store. Please try again.', 'error');
+            if ($response && isset($response['store_id'])) {
+                // Store the store data in options
+                update_option('mailblaze_wc_store_id', $response['store_id']);
+                update_option('mailblaze_wc_store_name', $store_name);
+                update_option('mailblaze_wc_store_email', $store_email);
+                update_option('mailblaze_wc_store_currency', $currency_code);
+                update_option('mailblaze_wc_store_money_format', $money_format);
+                update_option('mailblaze_wc_store_locale', $primary_locale);
+                update_option('mailblaze_wc_store_timezone', $timezone);
+                update_option('mailblaze_wc_store_phone', $phone);
+                update_option('mailblaze_wc_store_address', $address);
+
+                $action = isset($response['created_at']) && isset($response['updated_at']) && $response['created_at'] === $response['updated_at'] ? 'registered' : 'updated';
+                add_settings_error('mailblaze_wc_errors', 'store_registered', "Store {$action} successfully.", 'updated');
+            } else {
+                add_settings_error('mailblaze_wc_errors', 'registration_failed', 'Failed to register/update the store. Please try again.', 'error');
+            }
+        } catch (Exception $e) {
+            add_settings_error('mailblaze_wc_errors', 'registration_failed', 'Failed to register/update the store: ' . $e->getMessage(), 'error');
         }
     }
 }
+
+
+
+
+
+
+
