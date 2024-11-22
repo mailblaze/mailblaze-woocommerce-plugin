@@ -65,6 +65,7 @@ class Mailblaze_WC_Admin_Settings
 
         // Get stored options
         $enabled_hooks = get_option('mailblaze_wc_enabled_hooks', []);
+        $sync_products = get_option('mailblaze_wc_sync_products', '0');
 
         // Display settings form
 ?>
@@ -116,6 +117,17 @@ class Mailblaze_WC_Admin_Settings
                             </label>
                         </td>
                     </tr>
+                    <!-- New Product Sync Option -->
+                    <tr valign="top">
+                        <th scope="row">Sync Products</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_sync_products" value="1" <?php checked($sync_products, '1'); ?> />
+                                Enable product synchronization with Mailblaze
+                            </label>
+                            <p class="description">When enabled, product information will be synced with Mailblaze when products are created, updated, or deleted.</p>
+                        </td>
+                    </tr>
                     <!-- Opt-in Checkbox Option -->
                     <tr valign="top">
                         <th scope="row">Enable Opt-in Checkbox</th>
@@ -125,6 +137,42 @@ class Mailblaze_WC_Admin_Settings
                                 Add opt-in checkbox to registration and account pages
                             </label>
                             <p class="description">When enabled, an opt-in checkbox will be added to the WooCommerce registration form and account details page.</p>
+                        </td>
+                    </tr>
+                    <!-- Mailing List Dropdown -->
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_mailing_list">Default Mailing List</label></th>
+                        <td>
+                            <?php
+                            try {
+                                $api_key = get_option('mailblaze_wc_api_key', '');
+                                if (!empty($api_key)) {
+                                    $api_client = new Mailblaze_WC_API_Client($api_key);
+                                    $mailing_lists = $api_client->get_mailing_lists();
+                                    if (!empty($mailing_lists)) {
+                                        $selected_list = get_option('mailblaze_wc_mailing_list', '');
+                                        echo '<select id="mailblaze_wc_mailing_list" name="mailblaze_wc_mailing_list" class="regular-text">';
+                                        echo '<option value="">Select a mailing list</option>';
+                                        foreach ($mailing_lists as $list) {
+                                            echo sprintf(
+                                                '<option value="%s" %s>%s</option>',
+                                                esc_attr($list['list_uid']),
+                                                selected($selected_list, $list['list_uid'], false),
+                                                esc_html($list['name'])
+                                            );
+                                        }
+                                        echo '</select>';
+                                        echo '<p class="description">Select the default mailing list for new subscribers.</p>';
+                                    } else {
+                                        echo '<p class="description">No mailing lists found. Please create a mailing list in your Mailblaze account.</p>';
+                                    }
+                                } else {
+                                    echo '<p class="description">Please save your API key first to load available mailing lists.</p>';
+                                }
+                            } catch (Exception $e) {
+                                echo '<p class="description error">Error loading mailing lists: ' . esc_html($e->getMessage()) . '</p>';
+                            }
+                            ?>
                         </td>
                     </tr>
                 </table>
@@ -182,8 +230,21 @@ class Mailblaze_WC_Admin_Settings
         $enable_optin = isset($_POST['mailblaze_wc_enable_optin']) ? '1' : '0';
         update_option('mailblaze_wc_enable_optin', $enable_optin);
 
+        // Save product sync option
+        $sync_products = isset($_POST['mailblaze_wc_sync_products']) ? '1' : '0';
+        update_option('mailblaze_wc_sync_products', $sync_products);
+
+        // Save mailing list selection
+        if (isset($_POST['mailblaze_wc_mailing_list'])) {
+            $mailing_list = sanitize_text_field($_POST['mailblaze_wc_mailing_list']);
+            update_option('mailblaze_wc_mailing_list', $mailing_list);
+        }
+
         // Update store information in Mailblaze
         $this->update_store_in_mailblaze();
+
+        // Add a success message for the new option
+        add_settings_error('mailblaze_wc_success', 'settings_updated', 'Settings saved successfully. Product sync ' . ($sync_products === '1' ? 'enabled' : 'disabled') . '.', 'updated');
     }
 
     private function update_store_in_mailblaze()
@@ -389,6 +450,8 @@ class Mailblaze_WC_Admin_Settings
         }
     }
 }
+
+
 
 
 

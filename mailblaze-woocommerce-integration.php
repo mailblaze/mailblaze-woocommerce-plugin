@@ -56,6 +56,9 @@ class Mailblaze_WC_Integration {
 
         // Add bulk sync action
         add_action('admin_init', [$this, 'handle_bulk_product_sync']);
+
+        // Register REST API endpoint
+        add_action('rest_api_init', [$this, 'register_rest_routes']);
     }
 
     public function activate() {
@@ -63,7 +66,7 @@ class Mailblaze_WC_Integration {
     }
 
     public function sync_product($product_id) {
-        if (empty($this->api_client)) {
+        if (empty($this->api_client) || get_option('mailblaze_wc_sync_products', '0') !== '1') {
             return;
         }
 
@@ -77,7 +80,7 @@ class Mailblaze_WC_Integration {
     }
 
     public function delete_product($product_id) {
-        if (empty($this->api_client)) {
+        if (empty($this->api_client) || get_option('mailblaze_wc_sync_products', '0') !== '1') {
             return;
         }
 
@@ -89,19 +92,59 @@ class Mailblaze_WC_Integration {
     }
 
     private function prepare_product_data($product) {
+        $categories = [];
+        foreach($product->get_category_ids() as $cat_id) {
+            $term = get_term($cat_id, 'product_cat');
+            if ($term && !is_wp_error($term)) {
+                $categories[] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug
+                ];
+            }
+        }
+
+        $gallery_image_ids = $product->get_gallery_image_ids();
+        $gallery_images = [];
+        foreach($gallery_image_ids as $image_id) {
+            $image_url = wp_get_attachment_url($image_id);
+            if ($image_url) {
+                $gallery_images[] = $image_url;
+            }
+        }
+
         return [
             'id' => $product->get_id(),
             'name' => $product->get_name(),
+            'slug' => $product->get_slug(),
             'sku' => $product->get_sku(),
-            'price' => $product->get_price(),
-            'regular_price' => $product->get_regular_price(),
-            'sale_price' => $product->get_sale_price(),
+            'price' => [
+                'current' => $product->get_price(),
+                'regular' => $product->get_regular_price(),
+                'sale' => $product->get_sale_price(),
+                'currency' => get_woocommerce_currency()
+            ],
             'status' => $product->get_status(),
-            'description' => $product->get_description(),
-            'short_description' => $product->get_short_description(),
-            'categories' => wp_list_pluck($product->get_category_ids(), 'term_id'),
-            'image_url' => wp_get_attachment_url($product->get_image_id()),
+            'featured' => $product->get_featured(),
+            'description' => [
+                'full' => $product->get_description(),
+                'short' => $product->get_short_description()
+            ],
+            'categories' => $categories,
+            'images' => [
+                'main' => wp_get_attachment_url($product->get_image_id()),
+                'gallery' => $gallery_images
+            ],
+            'stock' => [
+                'status' => $product->get_stock_status(),
+                'quantity' => $product->get_stock_quantity()
+            ],
+            'type' => $product->get_type(),
+            'virtual' => $product->is_virtual(),
+            'downloadable' => $product->is_downloadable(),
             'url' => get_permalink($product->get_id()),
+            'date_created' => $product->get_date_created() ? $product->get_date_created()->format('c') : null,
+            'date_modified' => $product->get_date_modified() ? $product->get_date_modified()->format('c') : null,
         ];
     }
 
@@ -113,7 +156,7 @@ class Mailblaze_WC_Integration {
     }
 
     private function bulk_sync_products() {
-        if (empty($this->api_client)) {
+        if (empty($this->api_client) || get_option('mailblaze_wc_sync_products', '0') !== '1') {
             return;
         }
 
@@ -134,6 +177,125 @@ class Mailblaze_WC_Integration {
             <p><?php _e('All products have been synced with Mailblaze.', 'mailblaze-woocommerce-integration'); ?></p>
         </div>
         <?php
+    }
+
+    public function register_rest_routes()
+    {
+        register_rest_route('mailblaze/v1', '/products', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_products'],
+            'permission_callback' => [$this, 'check_api_permissions'],
+            'args' => [
+                'page' => [
+                    'default' => 1,
+                    'sanitize_callback' => 'absint',
+                ],
+                'limit' => [
+                    'default' => 100,
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+            'schema' => [$this, 'get_products_schema'],
+        ]);
+    }
+
+    public function check_api_permissions(WP_REST_Request $request)
+    {
+        // Get the authorization header
+        $auth_header = $request->get_header('X-Mailblaze-Token');
+        
+        if (empty($auth_header)) {
+            return new WP_Error(
+                'rest_forbidden',
+                'Missing authentication token',
+                ['status' => 401]
+            );
+        }
+
+        // Get the stored token
+        $stored_token = get_option('mailblaze_wc_store_access_token');
+        
+        if (empty($stored_token)) {
+            return new WP_Error(
+                'rest_forbidden',
+                'Store is not properly registered',
+                ['status' => 401]
+            );
+        }
+
+        // Compare the tokens
+        if ($auth_header !== $stored_token) {
+            return new WP_Error(
+                'rest_forbidden',
+                'Invalid authentication token',
+                ['status' => 403]
+            );
+        }
+
+        return true;
+    }
+
+    public function get_store_access_token()
+    {
+        return get_option('mailblaze_wc_store_access_token');
+    }
+
+    public function get_products(WP_REST_Request $request)
+    {
+        try {
+            $page = $request->get_param('page');
+            $limit = $request->get_param('limit');
+            
+            // Get WooCommerce products with pagination
+            $products = wc_get_products([
+                'status' => 'publish',
+                'limit' => $limit,
+                'page' => $page,
+            ]);
+            
+            // Format the products data
+            $formatted_products = array_map([$this, 'prepare_product_data'], $products);
+            
+            // Get total product count for pagination
+            $total_products = wp_count_posts('product');
+            
+            return new WP_REST_Response([
+                'success' => true,
+                'data' => [
+                    'products' => $formatted_products,
+                    'pagination' => [
+                        'page' => $page,
+                        'limit' => $limit,
+                        'total_pages' => ceil($total_products->publish / $limit),
+                        'total_products' => $total_products->publish
+                    ]
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            return new WP_Error(
+                'woocommerce_products_error',
+                $e->getMessage(),
+                ['status' => 500]
+            );
+        }
+    }
+
+    public function get_products_schema()
+    {
+        return [
+            '$schema' => 'http://json-schema.org/draft-04/schema#',
+            'title' => 'products',
+            'type' => 'object',
+            'required' => ['X-Mailblaze-Token'],
+            'properties' => [
+                'X-Mailblaze-Token' => [
+                    'description' => 'Authentication token provided during store registration',
+                    'type' => 'string',
+                    'context' => ['header'],
+                ],
+                // ... other schema properties
+            ],
+        ];
     }
 }
 
