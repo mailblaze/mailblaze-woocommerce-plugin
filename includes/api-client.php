@@ -117,9 +117,19 @@ class Mailblaze_WC_API_Client
             ]
         ];
 
+        $categories_endpoint = [
+            'url' => get_rest_url(null, 'mailblaze/v1/categories'),
+            'token' => $access_token,
+            'method' => 'GET',
+            'headers' => [
+                'X-Mailblaze-Token' => '$token' // Template variable for Mailblaze to use
+            ]
+        ];
+
         // Add the endpoint configuration to the store data
         $data['endpoints'] = [
-            'products' => $products_endpoint
+            'products' => $products_endpoint,
+            'categories' => $categories_endpoint
         ];
 
         // Check if the store already exists

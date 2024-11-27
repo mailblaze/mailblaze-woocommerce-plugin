@@ -197,6 +197,24 @@ class Mailblaze_WC_Integration {
             ],
             'schema' => [$this, 'get_products_schema'],
         ]);
+
+        // Add new categories endpoint
+        register_rest_route('mailblaze/v1', '/categories', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_categories'],
+            'permission_callback' => [$this, 'check_api_permissions'],
+            'args' => [
+                'page' => [
+                    'default' => 1,
+                    'sanitize_callback' => 'absint',
+                ],
+                'limit' => [
+                    'default' => 100,
+                    'sanitize_callback' => 'absint',
+                ],
+            ],
+            'schema' => [$this, 'get_categories_schema'],
+        ]);
     }
 
     public function check_api_permissions(WP_REST_Request $request)
@@ -294,6 +312,80 @@ class Mailblaze_WC_Integration {
                     'context' => ['header'],
                 ],
                 // ... other schema properties
+            ],
+        ];
+    }
+
+    public function get_categories(WP_REST_Request $request)
+    {
+        try {
+            $page = $request->get_param('page');
+            $limit = $request->get_param('limit');
+            $offset = ($page - 1) * $limit;
+            
+            // Get product categories
+            $categories = get_terms([
+                'taxonomy' => 'product_cat',
+                'hide_empty' => false,
+                'number' => $limit,
+                'offset' => $offset,
+            ]);
+            
+            if (is_wp_error($categories)) {
+                throw new Exception($categories->get_error_message());
+            }
+
+            // Format the categories
+            $formatted_categories = array_map(function($category) {
+                $thumbnail_id = get_term_meta($category->term_id, 'thumbnail_id', true);
+                return [
+                    'id' => $category->term_id,
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                    'description' => $category->description,
+                    'parent' => $category->parent,
+                    'count' => $category->count,
+                    'image' => $thumbnail_id ? wp_get_attachment_url($thumbnail_id) : null,
+                ];
+            }, $categories);
+
+            // Get total category count for pagination
+            $total_categories = wp_count_terms('product_cat', ['hide_empty' => false]);
+            
+            return new WP_REST_Response([
+                'success' => true,
+                'data' => [
+                    'categories' => $formatted_categories,
+                    'pagination' => [
+                        'page' => $page,
+                        'limit' => $limit,
+                        'total_pages' => ceil($total_categories / $limit),
+                        'total_categories' => $total_categories
+                    ]
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            return new WP_Error(
+                'woocommerce_categories_error',
+                $e->getMessage(),
+                ['status' => 500]
+            );
+        }
+    }
+
+    public function get_categories_schema()
+    {
+        return [
+            '$schema' => 'http://json-schema.org/draft-04/schema#',
+            'title' => 'categories',
+            'type' => 'object',
+            'required' => ['X-Mailblaze-Token'],
+            'properties' => [
+                'X-Mailblaze-Token' => [
+                    'description' => 'Authentication token provided during store registration',
+                    'type' => 'string',
+                    'context' => ['header'],
+                ],
             ],
         ];
     }
