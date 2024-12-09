@@ -9,6 +9,50 @@ class Mailblaze_WC_Admin_Settings
     public function __construct()
     {
         add_action('admin_menu', [$this, 'add_settings_page']);
+        add_action('admin_notices', [$this, 'display_setup_notice']);
+    }
+
+    private function is_setup_complete()
+    {
+        $api_key = get_option('mailblaze_wc_api_key', '');
+        $store_id = get_option('mailblaze_wc_store_id', '');
+        return !empty($api_key) && !empty($store_id);
+    }
+
+    public function display_setup_notice()
+    {
+        // Only show on Mailblaze plugin pages or WooCommerce pages
+        $screen = get_current_screen();
+        if (!$screen || (!strpos($screen->id, 'mailblaze') && !strpos($screen->id, 'wc'))) {
+            return;
+        }
+
+        if (!$this->is_setup_complete()) {
+            $api_key = get_option('mailblaze_wc_api_key', '');
+            $store_id = get_option('mailblaze_wc_store_id', '');
+            ?>
+            <div class="notice notice-warning is-dismissible">
+                <h3 style="margin-top: 0.5em; margin-bottom: 0.5em;">📧 Complete Your Mailblaze Integration Setup</h3>
+                <p>
+                    To start using the Mailblaze WooCommerce integration, please complete the following steps:
+                </p>
+                <ul style="list-style-type: disc; margin-left: 1.5em; margin-bottom: 1em;">
+                    <?php if (empty($api_key)): ?>
+                        <li>
+                            <strong>Connect your Mailblaze account</strong> - 
+                            <a href="<?php echo admin_url('admin.php?page=mailblaze-wc-integration'); ?>">Add your API key</a>
+                        </li>
+                    <?php endif; ?>
+                    <?php if (!empty($api_key) && empty($store_id)): ?>
+                        <li>
+                            <strong>Configure your store</strong> - 
+                            <a href="<?php echo admin_url('admin.php?page=mailblaze-wc-register-store'); ?>">Complete store registration</a>
+                        </li>
+                    <?php endif; ?>
+                </ul>
+            </div>
+            <?php
+        }
     }
 
     public function add_settings_page()
@@ -47,7 +91,7 @@ class Mailblaze_WC_Admin_Settings
     public function create_settings_page()
     {
         // Check user capabilities
-        if (! current_user_can('manage_options')) {
+        if (!current_user_can('manage_options')) {
             return;
         }
 
@@ -58,6 +102,12 @@ class Mailblaze_WC_Admin_Settings
 
         // Get stored API key
         $api_key = get_option('mailblaze_wc_api_key', '');
+
+        // Display introduction screen if no API key is set
+        if (empty($api_key)) {
+            $this->display_introduction_screen();
+            return;
+        }
 
         // Display any error messages
         settings_errors('mailblaze_wc_errors');
@@ -117,17 +167,6 @@ class Mailblaze_WC_Admin_Settings
                             </label>
                         </td>
                     </tr>
-                    <!-- New Product Sync Option -->
-                    <tr valign="top">
-                        <th scope="row">Sync Products</th>
-                        <td>
-                            <label>
-                                <input type="checkbox" name="mailblaze_wc_sync_products" value="1" <?php checked($sync_products, '1'); ?> />
-                                Enable product synchronization with Mailblaze
-                            </label>
-                            <p class="description">When enabled, product information will be synced with Mailblaze when products are created, updated, or deleted.</p>
-                        </td>
-                    </tr>
                     <!-- Opt-in Checkbox Option -->
                     <tr valign="top">
                         <th scope="row">Enable Opt-in Checkbox</th>
@@ -180,6 +219,76 @@ class Mailblaze_WC_Admin_Settings
             </form>
         </div>
     <?php
+    }
+
+    private function display_introduction_screen()
+    {
+        ?>
+        <div class="wrap mailblaze-welcome">
+            <h1>Welcome to Mailblaze WooCommerce Integration</h1>
+            
+            <div class="mailblaze-welcome-content">
+                <h2>Let's get started!</h2>
+                <p>Connect your WooCommerce store with Mailblaze to:</p>
+                <ul style="list-style-type: disc; margin-left: 20px;">
+                    <li>Automatically sync customer data</li>
+                    <li>Track order information</li>
+                    <!-- <li>Create targeted email campaigns</li> -->
+                    <li>Automate your marketing efforts</li>
+                </ul>
+
+                <div class="mailblaze-setup-steps">
+                    <h3>Quick Setup Guide:</h3>
+                    <ol>
+                        <li>Enter your Mailblaze API key below</li>
+                        <li>Configure your store settings</li>
+                        <li>Choose which events to track</li>
+                        <li>Start engaging with your customers!</li>
+                    </ol>
+                </div>
+
+                <form method="post" class="mailblaze-initial-setup">
+                    <?php wp_nonce_field('mailblaze_wc_settings_save', 'mailblaze_wc_nonce'); ?>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">
+                                <label for="mailblaze_wc_api_key">Mailblaze API Key</label>
+                            </th>
+                            <td>
+                                <input type="text" id="mailblaze_wc_api_key" name="mailblaze_wc_api_key" class="regular-text" required />
+                                <p class="description">
+                                    Don't have an API key? <a href="https://control.mailblaze.com/customer/index.php/api-keys/index" target="_blank">Generate one here</a>
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Connect to Mailblaze', 'primary', 'mailblaze_wc_save_settings'); ?>
+                </form>
+            </div>
+
+            <style>
+                .mailblaze-welcome-content {
+                    max-width: 800px;
+                    margin: 20px 0;
+                    background: #fff;
+                    padding: 25px;
+                    border-radius: 5px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .mailblaze-setup-steps {
+                    margin: 25px 0;
+                    padding: 20px;
+                    background: #f8f9fa;
+                    border-radius: 4px;
+                }
+                .mailblaze-initial-setup {
+                    margin-top: 30px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eee;
+                }
+            </style>
+        </div>
+        <?php
     }
 
     private function save_settings()
