@@ -21,7 +21,7 @@ class Mailblaze_WC_Admin_Settings
 
     public function display_setup_notice()
     {
-        // Only show on Mailblaze plugin pages or WooCommerce pages
+        // Only show on Mail Blaze plugin pages or WooCommerce pages
         $screen = get_current_screen();
         if (!$screen || (!strpos($screen->id, 'mailblaze') && !strpos($screen->id, 'wc'))) {
             return;
@@ -32,14 +32,14 @@ class Mailblaze_WC_Admin_Settings
             $store_id = get_option('mailblaze_wc_store_id', '');
             ?>
             <div class="notice notice-warning is-dismissible">
-                <h3 style="margin-top: 0.5em; margin-bottom: 0.5em;">📧 Complete Your Mailblaze Integration Setup</h3>
+                <h3 style="margin-top: 0.5em; margin-bottom: 0.5em;">📧 Complete Your Mail Blaze Integration Setup</h3>
                 <p>
-                    To start using the Mailblaze WooCommerce integration, please complete the following steps:
+                    To start using the Mail Blaze WooCommerce integration, please complete the following steps:
                 </p>
                 <ul style="list-style-type: disc; margin-left: 1.5em; margin-bottom: 1em;">
                     <?php if (empty($api_key)): ?>
                         <li>
-                            <strong>Connect your Mailblaze account</strong> - 
+                            <strong>Connect your Mail Blaze account</strong> - 
                             <a href="<?php echo admin_url('admin.php?page=mailblaze-wc-integration'); ?>">Add your API key</a>
                         </li>
                     <?php endif; ?>
@@ -58,8 +58,8 @@ class Mailblaze_WC_Admin_Settings
     public function add_settings_page()
     {
         add_menu_page(
-            'Mailblaze Integration',
-            'Mailblaze',
+            'Mail Blaze Integration',
+            'Mail Blaze',
             'manage_options',
             'mailblaze-wc-integration',
             [$this, 'create_settings_page'],
@@ -120,13 +120,13 @@ class Mailblaze_WC_Admin_Settings
         // Display settings form
 ?>
         <div class="wrap">
-            <h1>Mailblaze WooCommerce Integration</h1>
+            <h1>Mail Blaze WooCommerce Integration</h1>
             <form method="post">
                 <?php wp_nonce_field('mailblaze_wc_settings_save', 'mailblaze_wc_nonce'); ?>
                 <table class="form-table">
                     <!-- Existing API Key Field -->
                     <tr valign="top">
-                        <th scope="row"><label for="mailblaze_wc_api_key">Mailblaze API Key</label></th>
+                        <th scope="row"><label for="mailblaze_wc_api_key">Mail Blaze API Key</label></th>
                         <td><input type="text" id="mailblaze_wc_api_key" name="mailblaze_wc_api_key" value="<?php echo esc_attr($api_key); ?>" class="regular-text" /></td>
                     </tr>
                     <!-- New Hook Configuration Section -->
@@ -203,7 +203,7 @@ class Mailblaze_WC_Admin_Settings
                                         echo '</select>';
                                         echo '<p class="description">Select the default mailing list for new subscribers.</p>';
                                     } else {
-                                        echo '<p class="description">No mailing lists found. Please create a mailing list in your Mailblaze account.</p>';
+                                        echo '<p class="description">No mailing lists found. Please create a mailing list in your Mail Blaze account.</p>';
                                     }
                                 } else {
                                     echo '<p class="description">Please save your API key first to load available mailing lists.</p>';
@@ -225,11 +225,11 @@ class Mailblaze_WC_Admin_Settings
     {
         ?>
         <div class="wrap mailblaze-welcome">
-            <h1>Welcome to Mailblaze WooCommerce Integration</h1>
+            <h1>Welcome to Mail Blaze WooCommerce Integration</h1>
             
             <div class="mailblaze-welcome-content">
                 <h2>Let's get started!</h2>
-                <p>Connect your WooCommerce store with Mailblaze to:</p>
+                <p>Connect your WooCommerce store with Mail Blaze to:</p>
                 <ul style="list-style-type: disc; margin-left: 20px;">
                     <li>Automatically sync customer data</li>
                     <li>Track order information</li>
@@ -240,7 +240,7 @@ class Mailblaze_WC_Admin_Settings
                 <div class="mailblaze-setup-steps">
                     <h3>Quick Setup Guide:</h3>
                     <ol>
-                        <li>Enter your Mailblaze API key below</li>
+                        <li>Enter your Mail Blaze API key below</li>
                         <li>Configure your store settings</li>
                         <li>Choose which events to track</li>
                         <li>Start engaging with your customers!</li>
@@ -252,7 +252,7 @@ class Mailblaze_WC_Admin_Settings
                     <table class="form-table">
                         <tr valign="top">
                             <th scope="row">
-                                <label for="mailblaze_wc_api_key">Mailblaze API Key</label>
+                                <label for="mailblaze_wc_api_key">Mail Blaze API Key</label>
                             </th>
                             <td>
                                 <input type="text" id="mailblaze_wc_api_key" name="mailblaze_wc_api_key" class="regular-text" required />
@@ -262,7 +262,7 @@ class Mailblaze_WC_Admin_Settings
                             </td>
                         </tr>
                     </table>
-                    <?php submit_button('Connect to Mailblaze', 'primary', 'mailblaze_wc_save_settings'); ?>
+                    <?php submit_button('Connect to Mail Blaze', 'primary', 'mailblaze_wc_save_settings'); ?>
                 </form>
             </div>
 
@@ -349,7 +349,7 @@ class Mailblaze_WC_Admin_Settings
             update_option('mailblaze_wc_mailing_list', $mailing_list);
         }
 
-        // Update store information in Mailblaze
+        // Update store information in Mail Blaze
         $this->update_store_in_mailblaze();
 
         // Add a success message for the new option
@@ -382,12 +382,12 @@ class Mailblaze_WC_Admin_Settings
             $response = $api_client->register_store($data);
 
             if ($response && isset($response['store_id'])) {
-                add_settings_error('mailblaze_wc_success', 'store_updated', 'Store information updated successfully in Mailblaze.', 'updated');
+                add_settings_error('mailblaze_wc_success', 'store_updated', 'Store information updated successfully in Mail Blaze.', 'updated');
             } else {
-                add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mailblaze.', 'error');
+                add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mail Blaze.', 'error');
             }
         } catch (Exception $e) {
-            add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mailblaze: ' . $e->getMessage(), 'error');
+            add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mail Blaze: ' . $e->getMessage(), 'error');
         }
     }
 
@@ -402,7 +402,7 @@ class Mailblaze_WC_Admin_Settings
         $api_key = get_option('mailblaze_wc_api_key', '');
 
         if (empty($api_key)) {
-            echo '<div class="notice notice-error"><p>Please enter your Mailblaze API key in the main settings page before registering a store.</p></div>';
+            echo '<div class="notice notice-error"><p>Please enter your Mail Blaze API key in the main settings page before registering a store.</p></div>';
             return;
         }
 
@@ -413,7 +413,7 @@ class Mailblaze_WC_Admin_Settings
         $mailing_lists = $api_client->get_mailing_lists();
 
         if (empty($mailing_lists)) {
-            echo '<div class="notice notice-error"><p>No mailing lists found in your Mailblaze account. Please create a mailing list before registering a store.</p></div>';
+            echo '<div class="notice notice-error"><p>No mailing lists found in your Mail Blaze account. Please create a mailing list before registering a store.</p></div>';
             return;
         }
 
@@ -431,7 +431,7 @@ class Mailblaze_WC_Admin_Settings
     {
         ?>
         <div class="wrap">
-            <h1>Register Store with Mailblaze</h1>
+            <h1>Register Store with Mail Blaze</h1>
             <?php settings_errors('mailblaze_wc_errors'); ?>
             <form method="post">
                 <?php wp_nonce_field('mailblaze_wc_register_store', 'mailblaze_wc_nonce'); ?>
@@ -533,7 +533,7 @@ class Mailblaze_WC_Admin_Settings
         ];
 
         try {
-            // Send registration/update request to Mailblaze
+            // Send registration/update request to Mail Blaze
             $api_client = new Mailblaze_WC_API_Client($api_key);
             $response = $api_client->register_store($data);
 
