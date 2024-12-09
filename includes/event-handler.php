@@ -202,11 +202,33 @@ class Mailblaze_WC_Event_Handler {
 
 
     private function get_order_items($order) {
-        $items = [];
+        $items_string = [];
+        $items_detailed = [];
+        
         foreach ($order->get_items() as $item) {
-            $items[] = $item->get_name() . ' x ' . $item->get_quantity();
+            // Add to string format (existing functionality)
+            $items_string[] = $item->get_name() . ' x ' . $item->get_quantity();
+            
+            // Add detailed item data
+            $product = $item->get_product();
+            $items_detailed[] = [
+                'id' => $item->get_product_id(),
+                'name' => $item->get_name(),
+                'quantity' => $item->get_quantity(),
+                'total' => $item->get_total(),
+                'subtotal' => $item->get_subtotal(),
+                'sku' => $product ? $product->get_sku() : '',
+                'price' => $item->get_total() / $item->get_quantity(),
+                'variation_id' => $item->get_variation_id(),
+                'tax' => $item->get_total_tax(),
+                'tax_data' => $item->get_taxes()
+            ];
         }
-        return implode(', ', $items);
+
+        return [
+            'items_string' => implode(', ', $items_string),
+            'items_detailed' => $items_detailed
+        ];
     }
 
     private function get_shipping_address($order) {
