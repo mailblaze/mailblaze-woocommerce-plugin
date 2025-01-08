@@ -222,7 +222,7 @@ class Mailblaze_WC_API_Client
             if ($e->getCode() === 404) {
                 return false;
             }
-            throw $e;
+            return false;
         }               
         return $response ? $response['data'] : false;
     }

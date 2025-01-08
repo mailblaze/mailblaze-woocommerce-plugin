@@ -13,7 +13,7 @@ class Mailblaze_WC_Event_Handler {
     public function __construct() {
         $api_key = get_option( 'mailblaze_wc_api_key', '' );
         $this->store_id = get_option( 'mailblaze_wc_store_id', '' );
-        $this->mailing_list_id = get_option( 'mailblaze_wc_mailing_list_id', '' );
+        $this->mailing_list_id = get_option( 'mailblaze_wc_mailing_list', '' );
         $this->enabled_hooks = get_option( 'mailblaze_wc_enabled_hooks', [] );
         
         if ( ! empty( $api_key ) ) {
@@ -69,7 +69,8 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
             'FIELD_SHIPPING_ADDRESS' => $this->get_shipping_address($order),
             'FIELD_PAYMENT_METHOD' => $order->get_payment_method_title(),
-            'FIELD_CURRENCY' => $order->get_currency()
+            'FIELD_CURRENCY' => $order->get_currency(),
+            'list_uid' => $this->mailing_list_id
         ];
 
         try {
@@ -85,6 +86,8 @@ class Mailblaze_WC_Event_Handler {
             'old_status' => $old_status,
             'new_status' => $new_status,
             'order' => $this->prepare_order_data( $order ),
+            'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('order_status_changed', $data);
     }
@@ -94,6 +97,8 @@ class Mailblaze_WC_Event_Handler {
         $data = [
             'event_type' => 'user_register',
             'user' => $this->prepare_user_data( $user ),
+            'FIELD_CUSTOMER_EMAIL' => $user->user_email,
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('user_register', $data);
     }
@@ -103,6 +108,8 @@ class Mailblaze_WC_Event_Handler {
         $data = [
             'event_type' => 'product_purchase',
             'order' => $this->prepare_order_data( $order ),
+            'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('product_purchase', $data);
     }
@@ -114,37 +121,49 @@ class Mailblaze_WC_Event_Handler {
 
         $user_id = get_current_user_id();
         $cart = WC()->cart->get_cart();
+        $user = get_userdata( $user_id );
 
         $data = [
             'event_type' => 'cart_abandoned',
             'user_id'  => $user_id,
             'cart'     => $this->prepare_cart_data( $cart ),
+            'FIELD_CUSTOMER_EMAIL' => $user->user_email,
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('cart_abandoned', $data);
     }
 
     public function handle_coupon_used( $coupon_code ) {
         $coupon = new WC_Coupon( $coupon_code );
+        $user = wp_get_current_user();
         $data = [
             'event_type'  => 'coupon_used',
             'coupon_code' => $coupon_code,
             'discount'    => $coupon->get_amount(),
+            'FIELD_CUSTOMER_EMAIL' => $user->user_email,
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('coupon_used', $data);
     }
 
     public function handle_subscription_created( $subscription ) {
+        $user = get_userdata( $subscription->get_customer_id() );
         $data = [
             'event_type'   => 'subscription_created',
             'subscription' => $this->prepare_subscription_data( $subscription ),
+            'FIELD_CUSTOMER_EMAIL' => $user->user_email,
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('subscription_created', $data);
     }
 
     public function handle_subscription_cancelled( $subscription ) {
+        $user = get_userdata( $subscription->get_customer_id() );
         $data = [
             'event_type'   => 'subscription_cancelled',
             'subscription' => $this->prepare_subscription_data( $subscription ),
+            'FIELD_CUSTOMER_EMAIL' => $user->user_email,
+            'list_uid' => $this->mailing_list_id
         ];
         $this->api_client->send_event('subscription_cancelled', $data);
     }
