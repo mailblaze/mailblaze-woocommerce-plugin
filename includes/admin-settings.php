@@ -10,6 +10,28 @@ class Mailblaze_WC_Admin_Settings
     {
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_notices', [$this, 'display_setup_notice']);
+        add_action('wp_ajax_test_smtp_connection', [$this, 'handle_smtp_test']);
+    }
+
+    public function handle_smtp_test() {
+        // Check nonce
+        if (!check_ajax_referer('test_smtp_connection', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Invalid security token.']);
+        }
+
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'You do not have permission to perform this action.']);
+        }
+
+        // Test SMTP connection
+        $result = Mailblaze_WC_SMTP_Handler::test_smtp_connection();
+
+        if ($result['success']) {
+            wp_send_json_success(['message' => $result['message']]);
+        } else {
+            wp_send_json_error(['message' => $result['message']]);
+        }
     }
 
     private function is_setup_complete()
@@ -178,7 +200,7 @@ class Mailblaze_WC_Admin_Settings
                             <p class="description">When enabled, an opt-in checkbox will be added to the WooCommerce registration form and account details page.</p>
                         </td>
                     </tr>
-                    <!-- Mailing List Dropdown -->
+                    <!-- Mailing List Droperwn -->
                     <tr valign="top">
                         <th scope="row"><label for="mailblaze_wc_mailing_list">Default Mailing List</label></th>
                         <td>
@@ -214,7 +236,109 @@ class Mailblaze_WC_Admin_Settings
                             ?>
                         </td>
                     </tr>
+
+                    <!-- SMTP Configuration Section -->
+                    <tr valign="top">
+                        <th scope="row" colspan="2">
+                            <h3 style="margin: 0;">SMTP Configuration</h3>
+                        </th>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row">
+                            <label for="mailblaze_wc_use_smtp">Use Mail Blaze SMTP</label>
+                        </th>
+                        <td>
+                            <label>
+                                <input type="checkbox" id="mailblaze_wc_use_smtp" name="mailblaze_wc_use_smtp" value="1" <?php checked(get_option('mailblaze_wc_use_smtp', '0'), '1'); ?> />
+                                Use Mail Blaze SMTP server for sending emails
+                            </label>
+                            <p class="description">When enabled, all WordPress emails will be sent through Mail Blaze SMTP servers.</p>
+                        </td>
+                    </tr>
+                    <tr valign="top" class="mailblaze-smtp-settings" style="<?php echo get_option('mailblaze_wc_use_smtp', '0') !== '1' ? 'display: none;' : ''; ?>">
+                        <th scope="row">
+                            <label for="mailblaze_wc_smtp_username">SMTP Username</label>
+                        </th>
+                        <td>
+                            <input type="text" id="mailblaze_wc_smtp_username" name="mailblaze_wc_smtp_username" value="<?php echo esc_attr(get_option('mailblaze_wc_smtp_username', '')); ?>" class="regular-text" />
+                            <p class="description">Your Mail Blazes username (your API key will be used as the password)</p>
+                        </td>
+                    </tr>
+                    <tr valign="top" class="mailblaze-smtp-settings" style="<?php echo get_option('mailblaze_wc_use_smtp', '0') !== '1' ? 'display: none;' : ''; ?>">
+                        <th scope="row">
+                            <label for="mailblaze_wc_smtp_from_email">From Email</label>
+                        </th>
+                        <td>
+                            <input type="email" id="mailblaze_wc_smtp_from_email" name="mailblaze_wc_smtp_from_email" value="<?php echo esc_attr(get_option('mailblaze_wc_smtp_from_email', get_option('admin_email'))); ?>" class="regular-text" />
+                            <p class="description">The email address that emails will be sent from</p>
+                        </td>
+                    </tr>
+                    <tr valign="top" class="mailblaze-smtp-settings" style="<?php echo get_option('mailblaze_wc_use_smtp', '0') !== '1' ? 'display: none;' : ''; ?>">
+                        <th scope="row">
+                            <label for="mailblaze_wc_smtp_from_name">From Name</label>
+                        </th>
+                        <td>
+                            <input type="text" id="mailblaze_wc_smtp_from_name" name="mailblaze_wc_smtp_from_name" value="<?php echo esc_attr(get_option('mailblaze_wc_smtp_from_name', get_bloginfo('name'))); ?>" class="regular-text" />
+                            <p class="description">The name that emails will be sent from</p>
+                        </td>
+                    </tr>
+                    <tr valign="top" class="mailblaze-smtp-settings" style="<?php echo get_option('mailblaze_wc_use_smtp', '0') !== '1' ? 'display: none;' : ''; ?>">
+                        <th scope="row">Test Connection</th>
+                        <td>
+                            <button type="button" id="test_smtp_connection" class="button button-secondary">
+                                Test SMTP Connection
+                            </button>
+                            <span id="smtp_test_result" style="margin-left: 10px; display: none;"></span>
+                        </td>
+                    </tr>
                 </table>
+
+                <script type="text/javascript">
+                    jQuery(document).ready(function($) {
+                        $('#mailblaze_wc_use_smtp').on('change', function() {
+                            if ($(this).is(':checked')) {
+                                $('.mailblaze-smtp-settings').show();
+                            } else {
+                                $('.mailblaze-smtp-settings').hide();
+                            }
+                        });
+
+                        $('#test_smtp_connection').on('click', function() {
+                            var $button = $(this);
+                            var $result = $('#smtp_test_result');
+                            
+                            $button.prop('disabled', true);
+                            $button.text('Testing...');
+                            $result.hide();
+
+                            $.ajax({
+                                url: ajaxurl,
+                                type: 'POST',
+                                data: {
+                                    action: 'test_smtp_connection',
+                                    nonce: '<?php echo wp_create_nonce('test_smtp_connection'); ?>'
+                                },
+                                success: function(response) {
+                                    $result.removeClass('notice-success notice-error')
+                                          .addClass(response.success ? 'notice-success' : 'notice-error')
+                                          .html(response.data.message)
+                                          .show();
+                                },
+                                error: function() {
+                                    $result.removeClass('notice-success notice-error')
+                                          .addClass('notice-error')
+                                          .html('Connection test failed. Please try again.')
+                                          .show();
+                                },
+                                complete: function() {
+                                    $button.prop('disabled', false);
+                                    $button.text('Test SMTP Connection');
+                                }
+                            });
+                        });
+                    });
+                </script>
+
                 <?php submit_button('Save Settings', 'primary', 'mailblaze_wc_save_settings'); ?>
             </form>
         </div>
@@ -349,11 +473,63 @@ class Mailblaze_WC_Admin_Settings
             update_option('mailblaze_wc_mailing_list', $mailing_list);
         }
 
+        // Save SMTP settings
+        $use_smtp = isset($_POST['mailblaze_wc_use_smtp']) ? '1' : '0';
+        update_option('mailblaze_wc_use_smtp', $use_smtp);
+
+        if ($use_smtp === '1') {
+            // Save SMTP configuration
+            $smtp_fields = [
+                'mailblaze_wc_smtp_username' => 'text',
+                'mailblaze_wc_smtp_from_email' => 'email',
+                'mailblaze_wc_smtp_from_name' => 'text'
+            ];
+
+            foreach ($smtp_fields as $field => $type) {
+                if (isset($_POST[$field])) {
+                    $value = $_POST[$field];
+                    switch ($type) {
+                        case 'email':
+                            $value = sanitize_email($value);
+                            break;
+                        case 'number':
+                            $value = absint($value);
+                            break;
+                        default:
+                            $value = sanitize_text_field($value);
+                    }
+                    update_option($field, $value);
+                }
+            }
+
+            // Verify SMTP settings are complete
+            $required_smtp_fields = ['mailblaze_wc_smtp_username'];
+            $missing_fields = [];
+
+            foreach ($required_smtp_fields as $field) {
+                if (empty($_POST[$field])) {
+                    $missing_fields[] = str_replace('mailblaze_wc_smtp_', '', $field);
+                }
+            }
+
+            if (!empty($missing_fields)) {
+                add_settings_error(
+                    'mailblaze_wc_errors',
+                    'smtp_incomplete',
+                    sprintf(
+                        'SMTP configuration is incomplete. Required fields missing: %s',
+                        implode(', ', $missing_fields)
+                    ),
+                    'error'
+                );
+            }
+        }
+
         // Update store information in Mail Blaze
         $this->update_store_in_mailblaze();
 
-        // Add a success message for the new option
-        add_settings_error('mailblaze_wc_success', 'settings_updated', 'Settings saved successfully. Product sync ' . ($sync_products === '1' ? 'enabled' : 'disabled') . '.', 'updated');
+        // Add a success message
+        add_settings_error('mailblaze_wc_success', 'settings_updated', 'Settings saved successfully.', 'updated');
     }
 
     private function update_store_in_mailblaze()

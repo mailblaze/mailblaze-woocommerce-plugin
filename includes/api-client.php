@@ -73,7 +73,6 @@ class Mailblaze_WC_API_Client
                 if (isset($decoded_body['error']['general'])) {
                     throw new Exception($decoded_body['error']['general'], $response_code);
                 } else {
-                    var_dump($decoded_body);
                     throw new Exception('An error occurred:' . json_encode($decoded_body), $response_code);
                 }
             }

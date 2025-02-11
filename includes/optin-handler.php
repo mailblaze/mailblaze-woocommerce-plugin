@@ -88,6 +88,7 @@ class Mailblaze_WC_Optin_Handler
                             $api_client->update_subscriber($mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
                         } else {
                             $api_client->update_subscriber($mailing_list_id, $user_data);
+                            $api_client->send_event('user_register', $user_data);
                         }
                     } catch (Exception $e) {
                         error_log('Mailblaze: Failed to update subscriber opt-in status - ' . $e->getMessage());

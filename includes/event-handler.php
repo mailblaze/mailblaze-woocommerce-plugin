@@ -34,7 +34,7 @@ class Mailblaze_WC_Event_Handler {
         }
 
         if ( in_array( 'user_register', $this->enabled_hooks ) ) {
-            add_action( 'user_register', [ $this, 'handle_user_register' ] );
+            // add_action( 'user_register', [ $this, 'handle_user_register' ] );
         }
 
         // New hooks

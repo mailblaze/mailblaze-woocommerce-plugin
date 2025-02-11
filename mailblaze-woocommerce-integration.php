@@ -25,12 +25,14 @@ require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/admin-settings.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/api-client.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/event-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/optin-handler.php';
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/smtp-handler.php';
 
 class Mailblaze_WC_Integration {
     private $admin_settings;
     private $event_handler;
     private $optin_handler;
     private $api_client;
+    private $smtp_handler;
 
     public function __construct() {
         // Initialize admin settings
@@ -45,6 +47,9 @@ class Mailblaze_WC_Integration {
 
         // Initialize opt-in handler
         $this->optin_handler = new Mailblaze_WC_Optin_Handler();
+
+        // Initialize SMTP handler
+        $this->smtp_handler = new Mailblaze_WC_SMTP_Handler();
 
         // Add activation hook
         register_activation_hook(__FILE__, [$this, 'activate']);
