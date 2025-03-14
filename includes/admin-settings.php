@@ -555,7 +555,7 @@ class Mailblaze_WC_Admin_Settings
 
         try {
             $api_client = new Mailblaze_WC_API_Client($api_key);
-            $response = $api_client->register_store($data);
+            $response = $api_client->save_store($data);
 
             if ($response && isset($response['store_id'])) {
                 add_settings_error('mailblaze_wc_success', 'store_updated', 'Store information updated successfully in Mail Blaze.', 'updated');
@@ -711,7 +711,7 @@ class Mailblaze_WC_Admin_Settings
         try {
             // Send registration/update request to Mail Blaze
             $api_client = new Mailblaze_WC_API_Client($api_key);
-            $response = $api_client->register_store($data);
+            $response = $api_client->save_store($data);
 
             if ($response && isset($response['store_id'])) {
                 // Store the store data in options

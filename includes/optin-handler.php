@@ -6,8 +6,10 @@ if (!defined('ABSPATH')) {
 
 class Mailblaze_WC_Optin_Handler
 {
+    private $mailing_list_id;
     public function __construct()
     {
+        $this->mailing_list_id = get_option('mailblaze_wc_mailing_list', '');
         add_action('init', [$this, 'init']);
     }
 
@@ -63,7 +65,6 @@ class Mailblaze_WC_Optin_Handler
 
         $user = get_userdata($user_id);
         $api_key = get_option('mailblaze_wc_api_key', '');
-        $mailing_list_id = get_option('mailblaze_wc_mailing_list', '');
 
         if (!empty($api_key) && !empty($mailing_list_id)) {
             try {
@@ -72,6 +73,7 @@ class Mailblaze_WC_Optin_Handler
                     'EMAIL' => $user->user_email,
                     'FNAME' => $user->first_name,
                     'LNAME' => $user->last_name,
+                    'list_uid' => $this->mailing_list_id
                 ];
 
                 // Search for existing subscriber
@@ -89,6 +91,7 @@ class Mailblaze_WC_Optin_Handler
                         } else {
                             $api_client->update_subscriber($mailing_list_id, $user_data);
                             $api_client->send_event('user_register', $user_data);
+                            $api_client->send_event('user_optin', $user_data);
                         }
                     } catch (Exception $e) {
                         error_log('Mailblaze: Failed to update subscriber opt-in status - ' . $e->getMessage());

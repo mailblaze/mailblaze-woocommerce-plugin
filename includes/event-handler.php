@@ -26,7 +26,7 @@ class Mailblaze_WC_Event_Handler {
     private function init_hooks() {
         // Existing hooks
         if ( in_array( 'new_order', $this->enabled_hooks ) ) {
-            add_action( 'woocommerce_new_order', [ $this, 'handle_new_order' ] );
+            add_action( 'woocommerce_thankyou', [ $this, 'handle_new_order' ] );
         }
 
         if ( in_array( 'order_status_changed', $this->enabled_hooks ) ) {
@@ -81,6 +81,21 @@ class Mailblaze_WC_Event_Handler {
     }
 
     public function handle_order_status_changed( $order_id, $old_status, $new_status, $order ) {
+        // Skip the initial transition from checkout-draft to pending (pre-order)
+        if ($old_status === 'checkout-draft') {
+            return;
+        }
+        
+        // Skip if old status is pending as requested
+        if ($old_status === 'pending') {
+            return;
+        }
+        
+        // Only proceed if we have a valid order with an email
+        if (!$order || !$order->get_billing_email()) {
+            return;
+        }
+        
         $data = [
             'event_type' => 'order_status_changed',
             'old_status' => $old_status,
@@ -89,7 +104,12 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
             'list_uid' => $this->mailing_list_id
         ];
-        $this->api_client->send_event('order_status_changed', $data);
+        
+        try {
+            $this->api_client->send_event('order_status_changed', $data);
+        } catch (Exception $e) {
+            error_log('Mailblaze Integration Error: ' . $e->getMessage());
+        }
     }
 
     public function handle_user_register( $user_id ) {

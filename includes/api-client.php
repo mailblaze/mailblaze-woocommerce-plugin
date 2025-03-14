@@ -92,7 +92,7 @@ class Mailblaze_WC_API_Client
         return $response && isset($response['store']) ? $response['store'] : false;
     }
 
-    public function register_store($data)
+    public function save_store($data)
     {
         // Ensure required fields are set
         $required_fields = ['foreign_store_id', 'name', 'currency_code'];
