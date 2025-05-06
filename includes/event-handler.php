@@ -251,16 +251,18 @@ class Mailblaze_WC_Event_Handler {
             // Add detailed item data
             $product = $item->get_product();
             $items_detailed[] = [
-                'id' => $item->get_product_id(),
+                'product_id' => $item->get_product_id(),
                 'name' => $item->get_name(),
                 'quantity' => $item->get_quantity(),
                 'total' => $item->get_total(),
                 'subtotal' => $item->get_subtotal(),
                 'sku' => $product ? $product->get_sku() : '',
-                'price' => $item->get_total() / $item->get_quantity(),
+                'price' => $item->get_quantity() > 0 ? $item->get_total() / $item->get_quantity() : 0,
                 'variation_id' => $item->get_variation_id(),
                 'tax' => $item->get_total_tax(),
-                'tax_data' => $item->get_taxes()
+                'tax_data' => $item->get_taxes(),
+                'description' => $product ? ($product->get_short_description() ? $product->get_short_description() : $product->get_description()) : '',
+                'image' => $product ? (wp_get_attachment_image_src(get_post_thumbnail_id($product->get_id()), 'thumbnail')[0] ?? '') : ''
             ];
         }
 

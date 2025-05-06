@@ -60,13 +60,12 @@ class Mailblaze_WC_Optin_Handler
         error_log('Mailblaze: Saving opt-in field for user ' . $user_id);
         $new_optin = isset($_POST['mailblaze_optin']) ? 'yes' : 'no';
         $old_optin = get_user_meta($user_id, 'mailblaze_optin', true);
-
         update_user_meta($user_id, 'mailblaze_optin', $new_optin);
 
         $user = get_userdata($user_id);
         $api_key = get_option('mailblaze_wc_api_key', '');
 
-        if (!empty($api_key) && !empty($mailing_list_id)) {
+        if (!empty($api_key) && !empty($this->mailing_list_id)) {
             try {
                 $api_client = new Mailblaze_WC_API_Client($api_key);
                 $user_data = [
@@ -77,7 +76,7 @@ class Mailblaze_WC_Optin_Handler
                 ];
 
                 // Search for existing subscriber
-                $existing_subscriber = $api_client->search_subscriber_by_email($mailing_list_id, $user->user_email);
+                $existing_subscriber = $api_client->search_subscriber_by_email($this->mailing_list_id, $user->user_email);
                 if ($new_optin === 'yes' && $old_optin !== 'yes') {
                     $user_data += [
                         'STATUS' => "UNCONFIRMED",
@@ -86,10 +85,12 @@ class Mailblaze_WC_Optin_Handler
                     // User opted in
                     try {
                         if ($existing_subscriber) {
-                            $api_client->resubscribe_subscriber($mailing_list_id, $existing_subscriber['subscriber_uid']);
-                            $api_client->update_subscriber($mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
+                            $api_client->resubscribe_subscriber($this->mailing_list_id, $existing_subscriber['subscriber_uid']);
+                            $api_client->update_subscriber($this->mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
                         } else {
-                            $api_client->update_subscriber($mailing_list_id, $user_data);
+                            $api_client->update_subscriber($this->mailing_list_id, $user_data);
+                            // Sleep for 1 second to allow save in MongoDB to complete
+                            sleep(1);
                             $api_client->send_event('user_register', $user_data);
                             $api_client->send_event('user_optin', $user_data);
                         }
@@ -104,10 +105,10 @@ class Mailblaze_WC_Optin_Handler
                     try {
                         
                         if ($existing_subscriber) {
-                            $api_client->update_subscriber($mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
-                            $api_client->unsubscribe_subscriber($mailing_list_id, $existing_subscriber['subscriber_uid']);
+                            $api_client->update_subscriber($this->mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
+                            $api_client->unsubscribe_subscriber($this->mailing_list_id, $existing_subscriber['subscriber_uid']);
                         } else {
-                            $api_client->update_subscriber($mailing_list_id, $user_data);
+                            $api_client->update_subscriber($this->mailing_list_id, $user_data);
                         }
                     } catch (Exception $e) {
                         error_log('Mailblaze: Failed to update subscriber opt-out status - ' . $e->getMessage());
