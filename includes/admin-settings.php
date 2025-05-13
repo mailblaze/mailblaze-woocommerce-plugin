@@ -172,8 +172,16 @@ class Mailblaze_WC_Admin_Settings
                                 Product Purchased
                             </label><br />
                             <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="cart_created" <?php checked(in_array('cart_created', $enabled_hooks)); ?> />
+                                Cart Created (First item added)
+                            </label><br />
+                            <label>
+                                <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="cart_updated" <?php checked(in_array('cart_updated', $enabled_hooks)); ?> />
+                                Cart Updated (Item change, removal)
+                            </label><br />
+                            <label>
                                 <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="cart_abandoned" <?php checked(in_array('cart_abandoned', $enabled_hooks)); ?> />
-                                Cart Abandoned
+                                Cart Abandoned (Logged-in users, on cart emptied)
                             </label><br />
                             <label>
                                 <input type="checkbox" name="mailblaze_wc_enabled_hooks[]" value="coupon_used" <?php checked(in_array('coupon_used', $enabled_hooks)); ?> />
