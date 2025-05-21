@@ -11,6 +11,22 @@ class Mailblaze_WC_Admin_Settings
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_notices', [$this, 'display_setup_notice']);
         add_action('wp_ajax_test_smtp_connection', [$this, 'handle_smtp_test']);
+        add_action('admin_head', function () {
+            $image_url = plugin_dir_url(__DIR__) . 'assets/img/mb-woo-icon.svg';
+            ?>
+            <style>
+                #toplevel_page_mailblaze-wc-integration .wp-menu-image.dashicons-email-alt {
+                    background-image: url('<?php echo esc_url($image_url); ?>');
+                    background-repeat: no-repeat;
+                    background-position: center;
+                    background-size: 20px auto;
+                    &:before {
+                        content: '';
+                    }
+                }
+            </style>
+            <?php
+        });
     }
 
     public function handle_smtp_test() {
