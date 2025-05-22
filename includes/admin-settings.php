@@ -11,22 +11,6 @@ class Mailblaze_WC_Admin_Settings
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_notices', [$this, 'display_setup_notice']);
         add_action('wp_ajax_test_smtp_connection', [$this, 'handle_smtp_test']);
-        add_action('admin_head', function () {
-            $image_url = plugin_dir_url(__DIR__) . 'assets/img/mb-woo-icon.svg';
-            ?>
-            <style>
-                #toplevel_page_mailblaze-wc-integration .wp-menu-image.dashicons-email-alt {
-                    background-image: url('<?php echo esc_url($image_url); ?>');
-                    background-repeat: no-repeat;
-                    background-position: center;
-                    background-size: 20px auto;
-                    &:before {
-                        content: '';
-                    }
-                }
-            </style>
-            <?php
-        });
     }
 
     public function handle_smtp_test() {
@@ -95,13 +79,35 @@ class Mailblaze_WC_Admin_Settings
 
     public function add_settings_page()
     {
+        global $wp_filesystem;
+        // Initialize the filesystem
+        if ( ! function_exists( 'WP_Filesystem' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        WP_Filesystem();
+        
+        // Get the SVG icon content
+        $icon_path = MAILBLAZE_WC_PLUGIN_DIR . 'assets/img/mb-woo-icon.svg';
+        $icon_data = '';
+        
+        if ($wp_filesystem->exists($icon_path)) {
+            $icon_content = $wp_filesystem->get_contents($icon_path);
+            if ($icon_content) {
+                // Create a data URI for the SVG
+                $icon_data = 'data:image/svg+xml;base64,' . base64_encode($icon_content);
+            }
+        }
+        
+        // Use the custom icon if it was loaded, otherwise fall back to dashicons
+        $menu_icon = $icon_data ? $icon_data : 'dashicons-email-alt';
+        
         add_menu_page(
             'Mail Blaze Integration',
             'Mail Blaze',
             'manage_options',
             'mailblaze-wc-integration',
             [$this, 'create_settings_page'],
-            'dashicons-email-alt',
+            $menu_icon,
             56
         );
 
