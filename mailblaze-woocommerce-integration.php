@@ -96,6 +96,53 @@ class Mailblaze_WC_Integration {
         $this->api_client->sync_products([$product_data]);
     }
 
+    /**
+     * Get high-resolution image URL for better quality
+     * 
+     * @param int $attachment_id The attachment ID
+     * @param string $size The image size (default: 'large')
+     * @return string|false The image URL or false if not found
+     */
+    private function get_high_res_image_url($attachment_id, $size = 'large') {
+        if (empty($attachment_id)) {
+            return false;
+        }
+        
+        // Try to get the specified size first, fallback to full size if not available
+        $image_url = wp_get_attachment_image_url($attachment_id, $size);
+        
+        // If the specified size doesn't exist, get the full size
+        if (!$image_url) {
+            $image_url = wp_get_attachment_url($attachment_id);
+        }
+        
+        return $image_url;
+    }
+
+    /**
+     * Get multiple image sizes for responsive usage
+     * 
+     * @param int $attachment_id The attachment ID
+     * @return array Array of image URLs in different sizes
+     */
+    private function get_responsive_image_urls($attachment_id) {
+        if (empty($attachment_id)) {
+            return [];
+        }
+        
+        $sizes = ['thumbnail', 'medium', 'medium_large', 'large', 'full'];
+        $images = [];
+        
+        foreach ($sizes as $size) {
+            $url = wp_get_attachment_image_url($attachment_id, $size);
+            if ($url) {
+                $images[$size] = $url;
+            }
+        }
+        
+        return $images;
+    }
+
     private function prepare_product_data($product) {
         $categories = [];
         foreach($product->get_category_ids() as $cat_id) {
@@ -112,11 +159,18 @@ class Mailblaze_WC_Integration {
         $gallery_image_ids = $product->get_gallery_image_ids();
         $gallery_images = [];
         foreach($gallery_image_ids as $image_id) {
-            $image_url = wp_get_attachment_url($image_id);
+            $image_url = $this->get_high_res_image_url($image_id, 'large');
             if ($image_url) {
-                $gallery_images[] = $image_url;
+                $gallery_images[] = [
+                    'url' => $image_url,
+                    'sizes' => $this->get_responsive_image_urls($image_id)
+                ];
             }
         }
+
+        // Get main product image in high resolution
+        $main_image_id = $product->get_image_id();
+        $main_image_url = $this->get_high_res_image_url($main_image_id, 'large');
 
         return [
             'id' => $product->get_id(),
@@ -137,7 +191,8 @@ class Mailblaze_WC_Integration {
             ],
             'categories' => $categories,
             'images' => [
-                'main' => wp_get_attachment_url($product->get_image_id()),
+                'main' => $main_image_url,
+                'main_sizes' => $this->get_responsive_image_urls($main_image_id),
                 'gallery' => $gallery_images
             ],
             'stock' => [
@@ -343,6 +398,14 @@ class Mailblaze_WC_Integration {
             // Format the categories
             $formatted_categories = array_map(function($category) {
                 $thumbnail_id = get_term_meta($category->term_id, 'thumbnail_id', true);
+                $category_image = null;
+                $category_image_sizes = [];
+                
+                if ($thumbnail_id) {
+                    $category_image = $this->get_high_res_image_url($thumbnail_id, 'large');
+                    $category_image_sizes = $this->get_responsive_image_urls($thumbnail_id);
+                }
+                
                 return [
                     'id' => $category->term_id,
                     'name' => $category->name,
@@ -350,7 +413,8 @@ class Mailblaze_WC_Integration {
                     'description' => $category->description,
                     'parent' => $category->parent,
                     'count' => $category->count,
-                    'image' => $thumbnail_id ? wp_get_attachment_url($thumbnail_id) : null,
+                    'image' => $category_image,
+                    'image_sizes' => $category_image_sizes,
                 ];
             }, $categories);
 

@@ -313,7 +313,7 @@ class Mailblaze_WC_Event_Handler {
 
             $items_string[] = $product->get_name() . ' x ' . $cart_item['quantity'];
             
-            $image_url = $product->get_image();
+            $image_url = $this->get_product_image_url($product);
 
             $items_detailed[] = [
                 'product_id'    => $product->get_id(),
@@ -331,6 +331,31 @@ class Mailblaze_WC_Event_Handler {
             'items_string' => implode(', ', $items_string),
             'items_detailed' => $items_detailed
         ];
+    }
+
+    /**
+     * Get high-resolution image URL for better quality
+     * 
+     * @param WC_Product $product The product object
+     * @return string The high-resolution image URL
+     */
+    private function get_product_image_url($product) {
+        if (!$product instanceof WC_Product) {
+            return '';
+        }
+        
+        $image_id = $product->get_image_id();
+        if (!$image_id) {
+            return '';
+        }
+        
+        // Try to get large size first, fallback to full size
+        $image_url = wp_get_attachment_image_url($image_id, 'large');
+        if (!$image_url) {
+            $image_url = wp_get_attachment_url($image_id);
+        }
+        
+        return $image_url ? $image_url : '';
     }
 
     private function prepare_order_data( $order ) {
@@ -393,7 +418,7 @@ class Mailblaze_WC_Event_Handler {
             $product = $item->get_product();
             $image_url = '';
             if ($product instanceof WC_Product) { // Ensure $product is a WC_Product
-                $image_url = $product->get_image();
+                $image_url = $this->get_product_image_url($product);
             }
             
             $items_string[] = $item->get_name() . ' x ' . $item->get_quantity();
