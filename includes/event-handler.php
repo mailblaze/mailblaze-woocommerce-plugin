@@ -436,7 +436,8 @@ class Mailblaze_WC_Event_Handler {
                 'tax'           => wc_format_decimal( $item->get_total_tax(), wc_get_price_decimals() ),
                 // tax_data can be verbose: $item->get_taxes(),
                 'description'   => $product instanceof WC_Product ? ($product->get_short_description() ? $product->get_short_description() : $product->get_description()) : '',
-                'image'         => $image_url
+                'image'         => $image_url,
+                'product_url'   => $product instanceof WC_Product ? $product->get_permalink() : ''
             ];
         }
 
