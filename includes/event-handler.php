@@ -64,9 +64,8 @@ class Mailblaze_WC_Event_Handler {
         }
 
         if ( in_array( 'cart_updated', $this->enabled_hooks ) ) {
-            add_action( 'woocommerce_cart_updated', [ $this, 'handle_cart_updated' ], 10, 0 );
-            // Consider also: woocommerce_cart_item_removed, woocommerce_after_cart_item_quantity_update
-            // if woocommerce_cart_updated is not sufficient or fires too often.
+            add_action( 'woocommerce_cart_item_removed', [ $this, 'handle_cart_updated' ], 10, 0 );
+            add_action( 'woocommerce_after_cart_item_quantity_update', [ $this, 'handle_cart_updated' ], 10, 0 );
         }
     }
 
@@ -314,8 +313,7 @@ class Mailblaze_WC_Event_Handler {
 
             $items_string[] = $product->get_name() . ' x ' . $cart_item['quantity'];
             
-            $image_id = $product->get_image_id();
-            $image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'thumbnail' ) : '';
+            $image_url = $product->get_image();
 
             $items_detailed[] = [
                 'product_id'    => $product->get_id(),
