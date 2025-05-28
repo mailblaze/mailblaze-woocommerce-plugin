@@ -395,8 +395,7 @@ class Mailblaze_WC_Event_Handler {
             $product = $item->get_product();
             $image_url = '';
             if ($product instanceof WC_Product) { // Ensure $product is a WC_Product
-                $image_id = $product->get_image_id();
-                $image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'thumbnail' ) : '';
+                $image_url = $product->get_image();
             }
             
             $items_string[] = $item->get_name() . ' x ' . $item->get_quantity();
