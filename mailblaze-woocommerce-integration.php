@@ -64,6 +64,9 @@ class Mailblaze_WC_Integration {
 
         // Register REST API endpoint
         add_action('rest_api_init', [$this, 'register_rest_routes']);
+        
+        // Enqueue frontend styles
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_styles']);
     }
 
     public function activate() {
@@ -457,6 +460,18 @@ class Mailblaze_WC_Integration {
                 ],
             ],
         ];
+    }
+
+    public function enqueue_frontend_styles() {
+        // Enqueue on checkout page and other WooCommerce pages
+        if (is_checkout() || is_cart() || (function_exists('is_woocommerce') && is_woocommerce()) || is_account_page()) {
+            wp_enqueue_style(
+                'mailblaze-wc-frontend',
+                MAILBLAZE_WC_PLUGIN_URL . 'assets/css/frontend.css',
+                [],
+                '1.0.1' // Incremented version for cache busting
+            );
+        }
     }
 }
 

@@ -225,9 +225,12 @@ class Mailblaze_WC_Admin_Settings
                         <td>
                             <label>
                                 <input type="checkbox" name="mailblaze_wc_enable_optin" value="1" <?php checked(get_option('mailblaze_wc_enable_optin', '0'), '1'); ?> />
-                                Add opt-in checkbox to registration and account pages
+                                Add opt-in checkbox to registration, account, and checkout pages
                             </label>
-                            <p class="description">When enabled, an opt-in checkbox will be added to the WooCommerce registration form and account details page.</p>
+                            <p class="description">When enabled, an opt-in checkbox will be added to:<br>
+                            • WooCommerce registration form<br>
+                            • Account details page<br>
+                            • Checkout page (for non-logged-in customers)</p>
                         </td>
                     </tr>
                     <!-- Mailing List Droperwn -->

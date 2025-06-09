@@ -1,0 +1,64 @@
+/* Mailblaze WooCommerce Integration Frontend Styles */
+
+.mailblaze-checkout-optin {
+    margin: 20px 0;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    clear: both;
+}
+
+.mailblaze-checkout-optin h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    color: #333;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.mailblaze-checkout-optin .form-row {
+    margin-bottom: 0;
+}
+
+.mailblaze-checkout-optin label {
+    font-weight: normal;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.mailblaze-checkout-optin input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.mailblaze-checkout-optin .woocommerce-form__label {
+    color: #333;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+/* Make sure it's visible even with different themes */
+.mailblaze-checkout-optin {
+    display: block !important;
+    visibility: visible !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .mailblaze-checkout-optin {
+        margin: 15px 0;
+        padding: 15px;
+    }
+    
+    .mailblaze-checkout-optin h3 {
+        font-size: 16px;
+    }
+    
+    .mailblaze-checkout-optin .woocommerce-form__label {
+        font-size: 13px;
+    }
+} 
