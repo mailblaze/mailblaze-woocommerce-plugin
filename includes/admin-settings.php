@@ -103,7 +103,7 @@ class Mailblaze_WC_Admin_Settings
         
         add_menu_page(
             'Mail Blaze Integration',
-            'Mail Blaze',
+            'Mail Blaze Woo',
             'manage_options',
             'mailblaze-wc-integration',
             [$this, 'create_settings_page'],
