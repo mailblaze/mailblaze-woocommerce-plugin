@@ -1,0 +1,10 @@
+pipelines:
+  branches:
+    master:
+      - step:
+          name: Push to GitHub Repository
+          script:
+            - git remote add github https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/mailblaze/mailblaze-woocommerce-plugin.git
+            - git push github master
+          services:
+            - docker
