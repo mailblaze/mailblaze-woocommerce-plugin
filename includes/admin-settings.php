@@ -584,6 +584,7 @@ class Mailblaze_WC_Admin_Settings
             'timezone' => get_option('mailblaze_wc_store_timezone', ''),
             'phone' => get_option('mailblaze_wc_store_phone', ''),
             'address' => get_option('mailblaze_wc_store_address', ''),
+            'list_uid' => get_option('mailblaze_wc_mailing_list', ''),
         ];
 
         try {

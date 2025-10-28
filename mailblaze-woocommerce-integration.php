@@ -4,7 +4,7 @@
  * Plugin Name: Mailblaze WooCommerce Integration
  * Plugin URI:  https://mailblaze.com/
  * Description: Integrates WooCommerce with Mailblaze.
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      Mail Blaze
  * Author URI:  https://mailblaze.com/
  * License:     GPL2
