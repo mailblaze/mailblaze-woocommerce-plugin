@@ -21,38 +21,19 @@ class Mailblaze_WC_Optin_Handler
             add_action('woocommerce_created_customer', [$this, 'save_optin_field']);
             add_action('woocommerce_save_account_details', [$this, 'save_optin_field']);
 
-            // Add checkout hooks for non-logged-in customers - ORDERED BY BEST PLACEMENT
-            // Prime locations (ideal placement)
+            // Checkout opt-in for guests. Do not hook order-review / review-order
+            // actions: WooCommerce re-renders that fragment via AJAX, which bypasses
+            // the per-request duplicate guard and paints a second checkbox under
+            // the "Your order" heading.
             add_action('woocommerce_after_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_checkout_after_customer_details', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_before_payment', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_before_submit', [$this, 'add_checkout_optin_field'], 10);
-            
-            // Good secondary locations
             add_action('woocommerce_after_checkout_registration_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_after_checkout_shipping_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_checkout_before_order_review', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_after_order_total', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_after_order_notes', [$this, 'add_checkout_optin_field'], 10);
-            
-            // Broader fallback locations
-            add_action('woocommerce_checkout_order_review', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_after_submit', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_checkout_after_order_review', [$this, 'add_checkout_optin_field'], 10);
-            
-            // Less ideal but still workable locations
             add_action('woocommerce_before_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_before_checkout_registration_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_before_checkout_shipping_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_before_order_notes', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_checkout_before_order_review_heading', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_before_cart_contents', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_after_cart_contents', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_before_shipping', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_after_shipping', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_review_order_before_order_total', [$this, 'add_checkout_optin_field'], 10);
-            
-            // Very broad fallback locations (least preferred)
             add_action('woocommerce_before_checkout_form', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_checkout_before_customer_details', [$this, 'add_checkout_optin_field'], 10);
             add_action('woocommerce_checkout_billing', [$this, 'add_checkout_optin_field'], 25);
@@ -102,6 +83,13 @@ class Mailblaze_WC_Optin_Handler
     {
         // Only show for non-logged-in users
         if (!is_user_logged_in()) {
+            // WooCommerce refreshes the order table in a separate AJAX request.
+            // Never render into that fragment or a second box appears under "Your order".
+            $wc_ajax = isset($_REQUEST['wc-ajax']) ? sanitize_text_field(wp_unslash($_REQUEST['wc-ajax'])) : '';
+            if ($wc_ajax === 'update_order_review') {
+                return;
+            }
+
             // Prevent duplicate checkboxes by checking if we've already rendered it
             static $already_rendered = false;
             if ($already_rendered) {
@@ -287,21 +275,18 @@ class Mailblaze_WC_Optin_Handler
                 if ($('.mailblaze-checkout-optin').length === 0) {
                     console.log('Mailblaze: Opt-in checkbox not found, injecting via JavaScript');
                     
-                    // Try to find the best place to inject the checkbox - more aggressive selectors
+                    // Prefer billing / customer details — never the order-review fragment,
+                    // which is where the duplicate under "Your order" used to appear.
                     var targetSelectors = [
-                        '#order_review',
-                        '.woocommerce-checkout-review-order',
-                        '#payment',
-                        '.woocommerce-checkout-payment',
+                        '#customer_details',
+                        '.woocommerce-billing-fields',
+                        '[name="billing_country"]',
+                        'input[name="billing_email"]',
                         '.checkout_coupon',
-                        '[name="billing_country"]', // Near billing fields
-                        'input[name="billing_email"]', // Near email field
-                        '.woocommerce-checkout',
-                        '.checkout',
                         'form.checkout',
                         'form[name="checkout"]',
-                        '.shop_table',
-                        'table',
+                        '.woocommerce-checkout',
+                        '.checkout',
                         'form'
                     ];
                     
@@ -381,6 +366,16 @@ class Mailblaze_WC_Optin_Handler
                 } else {
                     console.log('Mailblaze: Opt-in checkbox already exists');
                 }
+
+                // Order review HTML is replaced on AJAX refresh. Strip any box that
+                // lands under "Your order" so only the billing-area checkbox remains.
+                $(document.body).on('updated_checkout', function() {
+                    $('#order_review .mailblaze-checkout-optin').remove();
+                    var $boxes = $('.mailblaze-checkout-optin');
+                    if ($boxes.length > 1) {
+                        $boxes.slice(1).remove();
+                    }
+                });
             });
             </script>
             <?php
