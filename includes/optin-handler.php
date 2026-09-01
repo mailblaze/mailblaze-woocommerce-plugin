@@ -21,26 +21,20 @@ class Mailblaze_WC_Optin_Handler
             add_action('woocommerce_created_customer', [$this, 'save_optin_field']);
             add_action('woocommerce_save_account_details', [$this, 'save_optin_field']);
 
-            // Checkout opt-in for guests. Do not hook order-review / review-order
-            // actions: WooCommerce re-renders that fragment via AJAX, which bypasses
-            // the per-request duplicate guard and paints a second checkbox under
-            // the "Your order" heading.
-            add_action('woocommerce_after_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_checkout_after_customer_details', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_after_checkout_registration_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_after_checkout_shipping_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_after_order_notes', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_before_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_before_checkout_registration_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_before_checkout_shipping_form', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_before_order_notes', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_before_checkout_form', [$this, 'add_checkout_optin_field'], 10);
+            // Checkout opt-in for guests. Must render INSIDE form.checkout or the
+            // value is never posted. woocommerce_before_checkout_form is outside
+            // the form — that was why Mail Blaze never received checkout opt-ins.
+            // Do not hook order-review actions: that fragment is AJAX-refreshed
+            // and would paint a second checkbox under "Your order".
             add_action('woocommerce_checkout_before_customer_details', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_checkout_billing', [$this, 'add_checkout_optin_field'], 25);
-            add_action('woocommerce_checkout_shipping', [$this, 'add_checkout_optin_field'], 10);
-            add_action('woocommerce_after_checkout_form', [$this, 'add_checkout_optin_field'], 10);
-            
+            add_action('woocommerce_before_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
+            add_action('woocommerce_after_checkout_billing_form', [$this, 'add_checkout_optin_field'], 10);
+            add_action('woocommerce_after_checkout_registration_form', [$this, 'add_checkout_optin_field'], 10);
+            add_action('woocommerce_checkout_after_customer_details', [$this, 'add_checkout_optin_field'], 10);
+            add_action('woocommerce_after_order_notes', [$this, 'add_checkout_optin_field'], 10);
+
             add_action('woocommerce_checkout_update_order_meta', [$this, 'save_checkout_optin_field'], 10, 1);
+            add_action('woocommerce_checkout_order_processed', [$this, 'save_checkout_optin_field'], 10, 1);
 
             // Add debugging
             add_action('wp_footer', [$this, 'debug_optin_status']);
@@ -194,69 +188,70 @@ class Mailblaze_WC_Optin_Handler
      */
     public function save_checkout_optin_field($order_id)
     {
-        // Check if the checkout opt-in checkbox was checked
-        $checkout_optin = isset($_POST['mailblaze_checkout_optin']) ? 'yes' : 'no';
-        
-        // Save the opt-in preference to order meta
-        update_post_meta($order_id, '_mailblaze_checkout_optin', $checkout_optin);
-        
-        // If user opted in, subscribe them to the mailing list
-        if ($checkout_optin === 'yes') {
-            $order = wc_get_order($order_id);
-            if (!$order) {
-                error_log('Mailblaze: Could not retrieve order for checkout opt-in processing');
-                return;
-            }
-            
-            $customer_email = $order->get_billing_email();
-            $customer_first_name = $order->get_billing_first_name();
-            $customer_last_name = $order->get_billing_last_name();
-            
-            if (empty($customer_email)) {
-                error_log('Mailblaze: No customer email found for checkout opt-in');
-                return;
-            }
-            
-            $api_key = get_option('mailblaze_wc_api_key', '');
-            
-            if (!empty($api_key) && !empty($this->mailing_list_id)) {
-                try {
-                    $api_client = new Mailblaze_WC_API_Client($api_key);
-                    $user_data = [
-                        'EMAIL' => $customer_email,
-                        'FNAME' => $customer_first_name,
-                        'LNAME' => $customer_last_name,
-                        'list_uid' => $this->mailing_list_id,
-                        'STATUS' => "UNCONFIRMED",
-                        "SEND_OPTIN" => true
-                    ];
+        static $already_processed = false;
+        if ($already_processed) {
+            return;
+        }
+        $already_processed = true;
 
-                    // Search for existing subscriber
-                    $existing_subscriber = $api_client->search_subscriber_by_email($this->mailing_list_id, $customer_email);
-                    
-                    if ($existing_subscriber) {
-                        // Update existing subscriber and resubscribe if they were unsubscribed
-                        $api_client->resubscribe_subscriber($this->mailing_list_id, $existing_subscriber['subscriber_uid']);
-                        $api_client->update_subscriber($this->mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
-                        error_log('Mailblaze: Updated existing subscriber from checkout: ' . $customer_email);
-                    } else {
-                        // Create new subscriber
-                        $api_client->update_subscriber($this->mailing_list_id, $user_data);
-                        error_log('Mailblaze: Created new subscriber from checkout: ' . $customer_email);
-                        
-                        // Sleep for 1 second to allow save in MongoDB to complete
-                        sleep(1);
-                        
-                        // Send events for new subscriber
-                        $api_client->send_event('user_register', $user_data);
-                        $api_client->send_event('user_optin', $user_data);
-                    }
-                } catch (Exception $e) {
-                    error_log('Mailblaze: Failed to process checkout opt-in for ' . $customer_email . ' - ' . $e->getMessage());
+        $checkout_optin = !empty($_POST['mailblaze_checkout_optin']) ? 'yes' : 'no';
+
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            error_log('Mailblaze: Could not retrieve order for checkout opt-in processing');
+            return;
+        }
+
+        $order->update_meta_data('_mailblaze_checkout_optin', $checkout_optin);
+        $order->save();
+
+        if ($checkout_optin !== 'yes') {
+            error_log('Mailblaze: Checkout opt-in was not ticked for order ' . $order_id);
+            return;
+        }
+        $customer_email = $order->get_billing_email();
+        $customer_first_name = $order->get_billing_first_name();
+        $customer_last_name = $order->get_billing_last_name();
+
+        if (empty($customer_email)) {
+            error_log('Mailblaze: No customer email found for checkout opt-in');
+            return;
+        }
+
+        $api_key = get_option('mailblaze_wc_api_key', '');
+
+        if (!empty($api_key) && !empty($this->mailing_list_id)) {
+            try {
+                $api_client = new Mailblaze_WC_API_Client($api_key);
+                $user_data = [
+                    'EMAIL' => $customer_email,
+                    'FNAME' => $customer_first_name,
+                    'LNAME' => $customer_last_name,
+                    'list_uid' => $this->mailing_list_id,
+                    'STATUS' => "UNCONFIRMED",
+                    "SEND_OPTIN" => true
+                ];
+
+                $existing_subscriber = $api_client->search_subscriber_by_email($this->mailing_list_id, $customer_email);
+
+                if ($existing_subscriber) {
+                    $api_client->resubscribe_subscriber($this->mailing_list_id, $existing_subscriber['subscriber_uid']);
+                    $api_client->update_subscriber($this->mailing_list_id, $user_data, $existing_subscriber['subscriber_uid']);
+                    error_log('Mailblaze: Updated existing subscriber from checkout: ' . $customer_email);
+                } else {
+                    $api_client->update_subscriber($this->mailing_list_id, $user_data);
+                    error_log('Mailblaze: Created new subscriber from checkout: ' . $customer_email);
+
+                    sleep(1);
+
+                    $api_client->send_event('user_register', $user_data);
+                    $api_client->send_event('user_optin', $user_data);
                 }
-            } else {
-                error_log('Mailblaze: API key or mailing list not configured for checkout opt-in');
+            } catch (Exception $e) {
+                error_log('Mailblaze: Failed to process checkout opt-in for ' . $customer_email . ' - ' . $e->getMessage());
             }
+        } else {
+            error_log('Mailblaze: API key or mailing list not configured for checkout opt-in');
         }
     }
 
