@@ -4,7 +4,7 @@
  * Plugin Name: Mailblaze WooCommerce Integration
  * Plugin URI:  https://mailblaze.com/
  * Description: Integrates WooCommerce with Mailblaze.
- * Version:     1.1.2
+ * Version:     1.2.0
  * Author:      Mail Blaze
  * Author URI:  https://mailblaze.com/
  * License:     GPL2
@@ -74,6 +74,25 @@ class Mailblaze_WC_Integration {
         
         // Enqueue frontend styles
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_styles']);
+
+        // Capture conversion click ids onto the Woo session (same visit only).
+        add_action('woocommerce_init', [$this, 'capture_mbclid']);
+    }
+
+    public function capture_mbclid() {
+        if (empty($_GET['mbclid']) || !function_exists('WC') || !WC()->session) {
+            return;
+        }
+
+        $mbclid = sanitize_text_field(wp_unslash($_GET['mbclid']));
+        if ($mbclid === '') {
+            return;
+        }
+
+        if (!WC()->session->has_session()) {
+            WC()->session->set_customer_session_cookie(true);
+        }
+        WC()->session->set('mailblaze_mbclid', $mbclid);
     }
 
     public function activate() {
