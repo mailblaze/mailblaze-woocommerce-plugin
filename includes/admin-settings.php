@@ -156,6 +156,7 @@ class Mailblaze_WC_Admin_Settings
         // Display any error messages
         settings_errors('mailblaze_wc_errors');
         settings_errors('mailblaze_wc_success');
+        $this->display_unlinked_list_notice();
 
         // Get stored options
         $enabled_hooks = get_option('mailblaze_wc_enabled_hooks', []);
@@ -256,7 +257,7 @@ class Mailblaze_WC_Admin_Settings
                                             );
                                         }
                                         echo '</select>';
-                                        echo '<p class="description">Select the default mailing list for new subscribers.</p>';
+                                        echo '<p class="description">Select the default mailing list for new subscribers. Click Save Settings to link this list to the store in Mail Blaze. Choosing a list before the store is registered only saves it here; store registration then sends it.</p>';
                                     } else {
                                         echo '<p class="description">No mailing lists found. Please create a mailing list in your Mail Blaze account.</p>';
                                     }
@@ -559,19 +560,38 @@ class Mailblaze_WC_Admin_Settings
         }
 
         // Update store information in Mail Blaze
-        $this->update_store_in_mailblaze();
+        $syncResult = $this->update_store_in_mailblaze();
 
-        // Add a success message
+        if ($syncResult === 'skipped') {
+            add_settings_error(
+                'mailblaze_wc_errors',
+                'list_not_linked',
+                'Settings were saved in WordPress, but this mailing list is not linked in Mail Blaze yet. Register the store to send it, or return here after the store exists and click Save Settings.',
+                'warning'
+            );
+            return;
+        }
+
+        if ($syncResult === 'failed') {
+            return;
+        }
+
         add_settings_error('mailblaze_wc_success', 'settings_updated', 'Settings saved successfully.', 'updated');
     }
 
+    /**
+     * Push the saved store settings, including the default mailing list, to Mail Blaze.
+     *
+     * @return string updated|skipped|failed|unchanged
+     */
     private function update_store_in_mailblaze()
     {
         $api_key = get_option('mailblaze_wc_api_key', '');
         $foreign_store_id = get_option('mailblaze_wc_foreign_store_id', '');
+        $mailing_list = get_option('mailblaze_wc_mailing_list', '');
 
         if (empty($api_key) || empty($foreign_store_id)) {
-            return;
+            return $mailing_list !== '' ? 'skipped' : 'unchanged';
         }
 
         $data = [
@@ -592,13 +612,43 @@ class Mailblaze_WC_Admin_Settings
             $response = $api_client->save_store($data);
 
             if ($response && isset($response['store_id'])) {
+                if ($mailing_list !== '' && empty($response['list_uid'])) {
+                    add_settings_error('mailblaze_wc_errors', 'list_not_linked', 'Mail Blaze saved the store, but the default mailing list was not linked. Open Settings and click Save Settings again.', 'error');
+                    return 'failed';
+                }
                 add_settings_error('mailblaze_wc_success', 'store_updated', 'Store information updated successfully in Mail Blaze.', 'updated');
-            } else {
-                add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mail Blaze.', 'error');
+                return 'updated';
             }
+
+            add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mail Blaze.', 'error');
+            return 'failed';
         } catch (Exception $e) {
             add_settings_error('mailblaze_wc_errors', 'update_failed', 'Failed to update store information in Mail Blaze: ' . $e->getMessage(), 'error');
+            return 'failed';
         }
+    }
+
+    private function display_unlinked_list_notice()
+    {
+        $api_key = get_option('mailblaze_wc_api_key', '');
+        $foreign_store_id = get_option('mailblaze_wc_foreign_store_id', '');
+        $mailing_list = get_option('mailblaze_wc_mailing_list', '');
+
+        if ($api_key === '' || $foreign_store_id === '' || $mailing_list === '') {
+            return;
+        }
+
+        try {
+            $api_client = new Mailblaze_WC_API_Client($api_key);
+            $store = $api_client->get_store_by_foreign_id($foreign_store_id);
+            if (!$store || !empty($store['list_uid'])) {
+                return;
+            }
+        } catch (Exception $e) {
+            return;
+        }
+
+        echo '<div class="notice notice-warning"><p>The selected mailing list is saved in WordPress, but this store is not linked to it in Mail Blaze. Ecommerce automations will fail until you click Save Settings.</p></div>';
     }
 
     public function create_register_store_page()
@@ -688,6 +738,26 @@ class Mailblaze_WC_Admin_Settings
                         <th scope="row"><label for="mailblaze_wc_store_address">Store Address</label></th>
                         <td><textarea id="mailblaze_wc_store_address" name="mailblaze_wc_store_address" class="large-text" rows="3"></textarea></td>
                     </tr>
+                    <tr valign="top">
+                        <th scope="row"><label for="mailblaze_wc_mailing_list">Default Mailing List</label></th>
+                        <td>
+                            <select id="mailblaze_wc_mailing_list" name="mailblaze_wc_mailing_list" class="regular-text" required>
+                                <option value="">Select a mailing list</option>
+                                <?php
+                                $selected_list = get_option('mailblaze_wc_mailing_list', '');
+                                foreach ($mailing_lists as $list) {
+                                    echo sprintf(
+                                        '<option value="%s" %s>%s</option>',
+                                        esc_attr($list['list_uid']),
+                                        selected($selected_list, $list['list_uid'], false),
+                                        esc_html($list['name'])
+                                    );
+                                }
+                                ?>
+                            </select>
+                            <p class="description">Ecommerce automations use this list. It is sent to Mail Blaze when the store is registered.</p>
+                        </td>
+                    </tr>
                 </table>
                 <?php submit_button('Register Store', 'primary', 'mailblaze_wc_register_store_submit'); ?>
             </form>
@@ -713,9 +783,12 @@ class Mailblaze_WC_Admin_Settings
         $timezone = sanitize_text_field($_POST['mailblaze_wc_store_timezone']);
         $phone = sanitize_text_field($_POST['mailblaze_wc_store_phone']);
         $address = sanitize_textarea_field($_POST['mailblaze_wc_store_address']);
+        $mailing_list = isset($_POST['mailblaze_wc_mailing_list'])
+            ? sanitize_text_field($_POST['mailblaze_wc_mailing_list'])
+            : get_option('mailblaze_wc_mailing_list', '');
 
-        if (empty($store_name) || empty($store_email)) {
-            add_settings_error('mailblaze_wc_errors', 'empty_fields', 'Please fill in all required fields.', 'error');
+        if (empty($store_name) || empty($store_email) || $mailing_list === '') {
+            add_settings_error('mailblaze_wc_errors', 'empty_fields', 'Please fill in all required fields, including the default mailing list.', 'error');
             return;
         }
 
@@ -740,6 +813,7 @@ class Mailblaze_WC_Admin_Settings
             'timezone' => $timezone,
             'phone' => $phone,
             'address' => $address,
+            'list_uid' => $mailing_list,
         ];
 
         try {
@@ -758,8 +832,14 @@ class Mailblaze_WC_Admin_Settings
                 update_option('mailblaze_wc_store_timezone', $timezone);
                 update_option('mailblaze_wc_store_phone', $phone);
                 update_option('mailblaze_wc_store_address', $address);
+                update_option('mailblaze_wc_mailing_list', $mailing_list);
 
-                $action = isset($response['created_at']) && isset($response['updated_at']) && $response['created_at'] === $response['updated_at'] ? 'registered' : 'updated';
+                if (empty($response['list_uid'])) {
+                    add_settings_error('mailblaze_wc_errors', 'list_not_linked', 'The store was saved, but Mail Blaze did not link the default mailing list. Ecommerce automations will fail until the list is linked.', 'error');
+                    return;
+                }
+
+                $action = isset($response['date_added'], $response['last_updated']) && $response['date_added'] === $response['last_updated'] ? 'registered' : 'updated';
                 add_settings_error('mailblaze_wc_errors', 'store_registered', "Store {$action} successfully.", 'updated');
             } else {
                 add_settings_error('mailblaze_wc_errors', 'registration_failed', 'Failed to register/update the store. Please try again.', 'error');
