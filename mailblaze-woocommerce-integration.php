@@ -23,6 +23,7 @@ define('MAILBLAZE_WC_PLUGIN_URL', plugin_dir_url(__FILE__));
 // Include necessary files
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/admin-settings.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/api-client.php';
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/order-line.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/event-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/optin-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/smtp-handler.php';

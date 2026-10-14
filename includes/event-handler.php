@@ -4,6 +4,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+require_once dirname( __FILE__ ) . '/order-line.php';
+
 class Mailblaze_WC_Event_Handler {
     private $api_client;
     private $enabled_hooks;
@@ -86,6 +88,9 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_SHIPPING_ADDRESS' => $this->get_shipping_address($order),
             'FIELD_PAYMENT_METHOD' => $order->get_payment_method_title(),
             'FIELD_CURRENCY' => $order->get_currency(),
+            'FIELD_ORDER_STATUS' => $order->get_status(),
+            'FIELD_ORDER_ID' => (string) $order->get_id(),
+            'FIELD_DATE_PAID' => $order->get_date_paid() ? $order->get_date_paid()->date( 'c' ) : '',
             'list_uid' => $this->mailing_list_id,
             'FIELD_CART_ID' => $cart_id_from_session // Added cart ID from session
         ];
@@ -369,6 +374,7 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_ORDER_TOTAL'        => $order->get_total(), // Changed from total to match NestJS field
             'FIELD_ORDER_CURRENCY'     => $order->get_currency(), // Changed from currency to match NestJS field
             'FIELD_ORDER_CREATED_AT'   => $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i:s' ) : '',
+            'FIELD_DATE_PAID'          => $order->get_date_paid() ? $order->get_date_paid()->date( 'c' ) : '',
             'FIELD_BILLING_EMAIL'      => $order->get_billing_email(),
             'FIELD_BILLING_FIRST_NAME' => $order->get_billing_first_name(),
             'FIELD_BILLING_LAST_NAME'  => $order->get_billing_last_name(),
@@ -422,16 +428,28 @@ class Mailblaze_WC_Event_Handler {
             }
             
             $items_string[] = $item->get_name() . ' x ' . $item->get_quantity();
-            
+
+            $parent_id = $item->get_product_id();
+            $variation_id = $item->get_variation_id();
+            $parent_name = '';
+            if ($variation_id) {
+                $parent = wc_get_product($parent_id);
+                if ($parent instanceof WC_Product) {
+                    $parent_name = $parent->get_name();
+                }
+            }
+            $identity = mailblaze_wc_line_identity($parent_id, $variation_id, $item->get_name(), $parent_name);
+
             $items_detailed[] = [
-                'product_id'    => $item->get_product_id(),
-                'name'          => $item->get_name(),
+                'product_id'    => $identity['product_id'],
+                'name'          => $identity['name'],
+                'parent_name'   => $identity['parent_name'],
                 'quantity'      => $item->get_quantity(),
                 'price'         => $item->get_quantity() > 0 ? wc_format_decimal( $item->get_subtotal() / $item->get_quantity(), wc_get_price_decimals() ) : 0,
                 'total'         => wc_format_decimal( $item->get_total(), wc_get_price_decimals() ),
                 'subtotal'      => wc_format_decimal( $item->get_subtotal(), wc_get_price_decimals() ),
                 'sku'           => $product instanceof WC_Product ? $product->get_sku() : '',
-                'variation_id'  => $item->get_variation_id(),
+                'variation_id'  => $identity['variation_id'],
                 // variation_name can be complex, often included in product name for variations
                 'tax'           => wc_format_decimal( $item->get_total_tax(), wc_get_price_decimals() ),
                 // tax_data can be verbose: $item->get_taxes(),
