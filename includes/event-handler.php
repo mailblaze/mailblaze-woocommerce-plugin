@@ -86,6 +86,9 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_SHIPPING_ADDRESS' => $this->get_shipping_address($order),
             'FIELD_PAYMENT_METHOD' => $order->get_payment_method_title(),
             'FIELD_CURRENCY' => $order->get_currency(),
+            'FIELD_ORDER_STATUS' => $order->get_status(),
+            'FIELD_ORDER_ID' => (string) $order->get_id(),
+            'FIELD_DATE_PAID' => $order->get_date_paid() ? $order->get_date_paid()->date( 'c' ) : '',
             'list_uid' => $this->mailing_list_id,
             'FIELD_CART_ID' => $cart_id_from_session // Added cart ID from session
         ];
@@ -369,6 +372,7 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_ORDER_TOTAL'        => $order->get_total(), // Changed from total to match NestJS field
             'FIELD_ORDER_CURRENCY'     => $order->get_currency(), // Changed from currency to match NestJS field
             'FIELD_ORDER_CREATED_AT'   => $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i:s' ) : '',
+            'FIELD_DATE_PAID'          => $order->get_date_paid() ? $order->get_date_paid()->date( 'c' ) : '',
             'FIELD_BILLING_EMAIL'      => $order->get_billing_email(),
             'FIELD_BILLING_FIRST_NAME' => $order->get_billing_first_name(),
             'FIELD_BILLING_LAST_NAME'  => $order->get_billing_last_name(),
