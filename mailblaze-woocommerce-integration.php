@@ -21,6 +21,7 @@ define('MAILBLAZE_WC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MAILBLAZE_WC_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include necessary files
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/mbclid.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/admin-settings.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/api-client.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/order-line.php';
@@ -84,8 +85,8 @@ class Mailblaze_WC_Integration {
             return;
         }
 
-        $mbclid = sanitize_text_field(wp_unslash($_GET['mbclid']));
-        if ($mbclid === '') {
+        $mbclid = mailblaze_wc_normalize_mbclid(wp_unslash($_GET['mbclid']));
+        if ($mbclid === null) {
             return;
         }
 

@@ -689,13 +689,14 @@ class Mailblaze_WC_Event_Handler {
 
     private function get_mbclid($order = null) {
         $session_mbclid = WC()->session ? WC()->session->get('mailblaze_mbclid') : null;
-        if (!empty($session_mbclid)) {
-            return $session_mbclid;
+        $normalized = mailblaze_wc_normalize_mbclid($session_mbclid);
+        if ($normalized !== null) {
+            return $normalized;
         }
         if ($order && method_exists($order, 'get_meta')) {
-            $meta = $order->get_meta('_mailblaze_mbclid');
-            if (!empty($meta)) {
-                return $meta;
+            $normalized = mailblaze_wc_normalize_mbclid($order->get_meta('_mailblaze_mbclid'));
+            if ($normalized !== null) {
+                return $normalized;
             }
         }
         return null;
