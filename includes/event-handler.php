@@ -283,8 +283,9 @@ class Mailblaze_WC_Event_Handler {
             return; // Need order and email to proceed
         }
 
+        mailblaze_wc_persist_order_mbclid( $order );
+
         $cart_id_from_session = WC()->session ? WC()->session->get('mailblaze_cart_id') : null;
-        $mbclid = $this->get_mbclid( $order );
 
         $data = [
             // event_type is added by send_event method in Mailblaze_WC_API_Client
@@ -300,13 +301,8 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_DATE_PAID' => $order->get_date_paid() ? $order->get_date_paid()->date( 'c' ) : '',
             'list_uid' => $this->mailing_list_id,
             'FIELD_CART_ID' => $cart_id_from_session,
-            'FIELD_MBCLID' => $mbclid
         ];
-
-        if ($mbclid && method_exists($order, 'update_meta_data')) {
-            $order->update_meta_data('_mailblaze_mbclid', $mbclid);
-            $order->save();
-        }
+        $data = mailblaze_wc_with_mbclid_field( $data, $this->mbclid_for_existing_order( $order ) );
 
         try {
             $this->api_client->send_event('order_created', $data);
@@ -327,7 +323,6 @@ class Mailblaze_WC_Event_Handler {
         
         $order_data = $this->prepare_order_data( $order );
         $cart_id_from_session = WC()->session ? WC()->session->get('mailblaze_cart_id') : null;
-        $mbclid = $this->get_mbclid( $order );
         
         $data = [
             'old_status' => $old_status,
@@ -337,8 +332,8 @@ class Mailblaze_WC_Event_Handler {
             'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
             'list_uid' => $this->mailing_list_id,
             'FIELD_CART_ID' => $cart_id_from_session,
-            'FIELD_MBCLID' => $mbclid
         ];
+        $data = mailblaze_wc_with_mbclid_field( $data, $this->mbclid_for_existing_order( $order ) );
         
         try {
             $this->api_client->send_event('order_status_changed', $data);
@@ -376,8 +371,8 @@ class Mailblaze_WC_Event_Handler {
             'order' => $this->prepare_order_data( $order ),
             'FIELD_CUSTOMER_EMAIL' => $order->get_billing_email(),
             'list_uid' => $this->mailing_list_id,
-            'FIELD_MBCLID' => $this->get_mbclid( $order )
         ];
+        $data = mailblaze_wc_with_mbclid_field( $data, $this->mbclid_for_existing_order( $order ) );
         try {
             $this->api_client->send_event('product_purchase', $data);
         } catch (Exception $e) {
@@ -687,19 +682,10 @@ class Mailblaze_WC_Event_Handler {
         return str_replace('<br/>', ', ', $address);
     }
 
-    private function get_mbclid($order = null) {
-        $session_mbclid = WC()->session ? WC()->session->get('mailblaze_mbclid') : null;
-        $normalized = mailblaze_wc_normalize_mbclid($session_mbclid);
-        if ($normalized !== null) {
-            return $normalized;
-        }
-        if ($order && method_exists($order, 'get_meta')) {
-            $normalized = mailblaze_wc_normalize_mbclid($order->get_meta('_mailblaze_mbclid'));
-            if ($normalized !== null) {
-                return $normalized;
-            }
-        }
-        return null;
+    private function mbclid_for_existing_order( $order ) {
+        $session_token = ( function_exists( 'WC' ) && WC() && WC()->session ) ? WC()->session->get( 'mailblaze_mbclid' ) : null;
+        $order_meta = ( $order && method_exists( $order, 'get_meta' ) ) ? $order->get_meta( '_mailblaze_mbclid' ) : null;
+        return mailblaze_wc_mbclid_for_existing_order( $order_meta, $session_token );
     }
 
     public function handle_cart_abandoned_hook() { 

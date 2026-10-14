@@ -78,6 +78,9 @@ class Mailblaze_WC_Integration {
 
         // Capture conversion click ids onto the Woo session (same visit only).
         add_action('woocommerce_init', [$this, 'capture_mbclid']);
+        // Classic checkout. Block checkout passes the order as the first argument.
+        add_action('woocommerce_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 3);
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 1);
     }
 
     public function capture_mbclid() {
@@ -85,8 +88,13 @@ class Mailblaze_WC_Integration {
             return;
         }
 
-        $mbclid = mailblaze_wc_normalize_mbclid(wp_unslash($_GET['mbclid']));
-        if ($mbclid === null) {
+        $stored = WC()->session->get('mailblaze_mbclid');
+        $mbclid = mailblaze_wc_resolve_captured_mbclid(
+            wp_unslash($_GET['mbclid']),
+            $stored,
+            mailblaze_wc_mbclid_secret()
+        );
+        if ($mbclid === null || $mbclid === $stored) {
             return;
         }
 
@@ -94,6 +102,22 @@ class Mailblaze_WC_Integration {
             WC()->session->set_customer_session_cookie(true);
         }
         WC()->session->set('mailblaze_mbclid', $mbclid);
+    }
+
+    /**
+     * Attach the session click id as soon as the order exists, before thank-you.
+     *
+     * @param int|object $order_id Order id, or the order object from the Store API hook.
+     * @param mixed $posted_data
+     * @param WC_Order|null $order
+     */
+    public function persist_mbclid_on_checkout($order_id, $posted_data = null, $order = null) {
+        if (is_object($order_id) && method_exists($order_id, 'get_meta')) {
+            $order = $order_id;
+        } elseif (!is_object($order) && function_exists('wc_get_order')) {
+            $order = wc_get_order($order_id);
+        }
+        mailblaze_wc_persist_order_mbclid($order);
     }
 
     public function activate() {
