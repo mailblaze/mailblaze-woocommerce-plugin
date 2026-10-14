@@ -4,6 +4,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+require_once dirname( __FILE__ ) . '/order-line.php';
+
 class Mailblaze_WC_Event_Handler {
     private $api_client;
     private $enabled_hooks;
@@ -426,16 +428,28 @@ class Mailblaze_WC_Event_Handler {
             }
             
             $items_string[] = $item->get_name() . ' x ' . $item->get_quantity();
-            
+
+            $parent_id = $item->get_product_id();
+            $variation_id = $item->get_variation_id();
+            $parent_name = '';
+            if ($variation_id) {
+                $parent = wc_get_product($parent_id);
+                if ($parent instanceof WC_Product) {
+                    $parent_name = $parent->get_name();
+                }
+            }
+            $identity = mailblaze_wc_line_identity($parent_id, $variation_id, $item->get_name(), $parent_name);
+
             $items_detailed[] = [
-                'product_id'    => $item->get_product_id(),
-                'name'          => $item->get_name(),
+                'product_id'    => $identity['product_id'],
+                'name'          => $identity['name'],
+                'parent_name'   => $identity['parent_name'],
                 'quantity'      => $item->get_quantity(),
                 'price'         => $item->get_quantity() > 0 ? wc_format_decimal( $item->get_subtotal() / $item->get_quantity(), wc_get_price_decimals() ) : 0,
                 'total'         => wc_format_decimal( $item->get_total(), wc_get_price_decimals() ),
                 'subtotal'      => wc_format_decimal( $item->get_subtotal(), wc_get_price_decimals() ),
                 'sku'           => $product instanceof WC_Product ? $product->get_sku() : '',
-                'variation_id'  => $item->get_variation_id(),
+                'variation_id'  => $identity['variation_id'],
                 // variation_name can be complex, often included in product name for variations
                 'tax'           => wc_format_decimal( $item->get_total_tax(), wc_get_price_decimals() ),
                 // tax_data can be verbose: $item->get_taxes(),
