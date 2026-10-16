@@ -272,6 +272,16 @@ mailblaze_assert_same(false, mailblaze_wc_newsletter_optin_links(''), 'a missing
 $optin_src = file_get_contents(dirname(__DIR__) . '/includes/optin-handler.php');
 mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_newsletter_optin_links($new_optin)') !== false, 'account opt-in uses the ticked-box gate');
 mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_newsletter_optin_links($checkout_optin)') !== false, 'checkout opt-in uses the ticked-box gate');
+mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_posted_optin($posted_optin)') !== false, 'account opt-in checks the posted value');
+mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_posted_optin($posted_checkout_optin)') !== false, 'checkout opt-in checks the posted value');
+mailblaze_assert_same('no', mailblaze_wc_posted_optin('no'), 'posted mailblaze_optin=no is not consent');
+mailblaze_assert_same('no', mailblaze_wc_posted_optin('No'), 'posted opt-in no is case-insensitive');
+mailblaze_assert_same('yes', mailblaze_wc_posted_optin('yes'), 'posted yes is consent');
+mailblaze_assert_same('yes', mailblaze_wc_posted_optin('1'), 'the Woo checkbox value 1 is consent');
+mailblaze_assert_same('yes', mailblaze_wc_posted_optin(1), 'a numeric checkbox 1 is consent');
+mailblaze_assert_same('no', mailblaze_wc_posted_optin('0'), 'an unticked value 0 is not consent');
+mailblaze_assert_same('no', mailblaze_wc_posted_optin(null), 'a missing field is not consent');
+mailblaze_assert_same('no', mailblaze_wc_posted_optin(array('yes')), 'an array post is not consent');
 $newsletter_key = mailblaze_wc_link_throttle_key($anon, 'shopper@example.com', null, 'newsletter');
 $login_key = mailblaze_wc_link_throttle_key($anon, 'shopper@example.com', null, 'login');
 mailblaze_assert_true($newsletter_key !== $login_key, 'the link throttle key includes source');
@@ -300,6 +310,22 @@ $other_visitor = mailblaze_wc_rate_limit_key('203.0.113.5', $other);
 mailblaze_assert_true($ip_only !== $with_anon, 'the rate limit key includes the anon id');
 mailblaze_assert_true($with_anon !== $other_visitor, 'two visitors behind one address do not share a bucket');
 mailblaze_assert_same($ip_only, mailblaze_wc_rate_limit_key('203.0.113.5', 'not-a-uuid'), 'an invalid anon id does not open a new bucket');
+$minted_buckets = mailblaze_wc_rate_buckets('203.0.113.5', $anon, true);
+$stable_buckets = mailblaze_wc_rate_buckets('203.0.113.5', $anon, false);
+mailblaze_assert_same(array($ip_only), array_values($minted_buckets), 'a just-minted id uses only the address ceiling');
+mailblaze_assert_same(array($ip_only, $with_anon), array_values($stable_buckets), 'a returning visitor has an address ceiling and a per-id bucket');
+mailblaze_assert_same(
+    array_values($minted_buckets),
+    array_values(mailblaze_wc_rate_buckets('203.0.113.5', $other, true)),
+    'rotating minted ids share one address ceiling'
+);
+mailblaze_assert_same(array($ip_only), array_values(mailblaze_wc_rate_buckets('203.0.113.5', 'not-a-uuid', false)), 'junk ids do not open a per-id bucket');
+mailblaze_assert_true(mailblaze_wc_rate_blocked(array(30, 0), 30), 'the address ceiling blocks a fresh id');
+mailblaze_assert_same(false, mailblaze_wc_rate_blocked(array(29, 29), 30), 'under both caps is allowed');
+mailblaze_assert_true(mailblaze_wc_rate_blocked(array(1, 30), 30), 'the per-id bucket still caps one visitor');
+$rate_src = file_get_contents(dirname(__DIR__) . '/includes/class-mailblaze-view-tracking.php');
+mailblaze_assert_true(strpos($rate_src, 'mailblaze_wc_rate_buckets($ip, $anon, $minted)') !== false, 'ingest applies the address ceiling and the per-id bucket');
+mailblaze_assert_true(strpos($rate_src, 'MailBlaze_Visitor::anon_id_was_minted()') !== false, 'a cookie minted in this request is not its own bucket');
 
 $js = file_get_contents(dirname(__DIR__) . '/assets/js/mailblaze-views.js');
 mailblaze_assert_true(strpos($js, "method: 'POST'") !== false, 'the beacon is a POST');
@@ -326,8 +352,7 @@ function wp_json_encode($data) {
     return json_encode($data);
 }
 function is_wp_error($thing) {
-    unset($thing);
-    return false;
+    return is_object($thing) && !empty($thing->mb_error);
 }
 function wp_remote_retrieve_response_code($response) {
     return $response['response']['code'];
@@ -337,8 +362,12 @@ function wp_remote_retrieve_body($response) {
 }
 function wp_remote_request($url, $args) {
     $GLOBALS['mb_requests'][] = array('url' => $url, 'args' => $args);
+    if (!empty($GLOBALS['mb_response_error'])) {
+        return (object) array('mb_error' => true);
+    }
+    $code = isset($GLOBALS['mb_response_code']) ? (int) $GLOBALS['mb_response_code'] : 200;
     return array(
-        'response' => array('code' => 200),
+        'response' => array('code' => $code),
         'body' => '{"ok":true}',
     );
 }
@@ -374,6 +403,56 @@ mailblaze_assert_same(2, $link_request['args']['timeout'], 'link posts use a sho
 $order_request = $GLOBALS['mb_requests'][2];
 mailblaze_assert_same(30, $order_request['args']['timeout'], 'order events keep the 30 second timeout');
 mailblaze_assert_true(!array_key_exists('blocking', $order_request['args']), 'order events stay blocking');
+
+mailblaze_assert_null(mailblaze_wc_browse_http_error(0), 'non-blocking calls often have no status');
+mailblaze_assert_null(mailblaze_wc_browse_http_error(204), 'a 2xx is not an HTTP error');
+mailblaze_assert_same(400, mailblaze_wc_browse_http_error(400), 'a visible 4xx is logged as an error');
+mailblaze_assert_same(500, mailblaze_wc_browse_http_error(500), 'a visible 5xx is logged as an error');
+$api_src = file_get_contents(dirname(__DIR__) . '/includes/api-client.php');
+mailblaze_assert_true(strpos($api_src, 'blocking false usually returns before a status exists') !== false, 'the client notes that non-blocking posts often have no status');
+mailblaze_assert_true(strpos($api_src, "error_log('Mailblaze browse HTTP '") !== false, 'a visible 4xx or 5xx is written to the log');
+
+$log_file = tempnam(sys_get_temp_dir(), 'mb-http-');
+ini_set('error_log', $log_file);
+$GLOBALS['mb_response_code'] = 0;
+$sent_unstatused = $client->send_product_views(array('views' => $with_email['views']));
+mailblaze_assert_same(array('dispatched' => true), $sent_unstatused, 'a non-blocking post with no status still counts as dispatched');
+
+$GLOBALS['mb_response_code'] = 500;
+$saw_http_error = false;
+try {
+    $client->send_visitor_link($link);
+} catch (Exception $http_error) {
+    $saw_http_error = $http_error->getMessage() === 'Failed to send visitor link to Mailblaze API';
+}
+mailblaze_assert_true($saw_http_error, 'a visible 5xx fails the browse post');
+$http_log = file_get_contents($log_file);
+mailblaze_assert_true(strpos($http_log, 'Mailblaze browse HTTP 500') !== false, 'a visible 5xx is logged without the response body');
+mailblaze_assert_true(strpos($http_log, 'shopper@example.com') === false, 'browse HTTP logs do not include the email');
+
+$GLOBALS['mb_response_code'] = 400;
+$saw_client_error = false;
+try {
+    $client->send_product_views(array('views' => $with_email['views']));
+} catch (Exception $client_error) {
+    $saw_client_error = $client_error->getMessage() === 'Failed to send product views to Mailblaze API';
+}
+mailblaze_assert_true($saw_client_error, 'a visible 4xx fails the browse post');
+$http_log = file_get_contents($log_file);
+mailblaze_assert_true(strpos($http_log, 'Mailblaze browse HTTP 400') !== false, 'a visible 4xx is logged');
+
+$GLOBALS['mb_response_code'] = 200;
+$GLOBALS['mb_response_error'] = true;
+$saw_transport_error = false;
+try {
+    $client->send_product_views(array('views' => $with_email['views']));
+} catch (Exception $transport_error) {
+    $saw_transport_error = $transport_error->getMessage() === 'Failed to send product views to Mailblaze API';
+}
+mailblaze_assert_true($saw_transport_error, 'a transport error fails the browse post');
+$http_log = file_get_contents($log_file);
+mailblaze_assert_true(strpos($http_log, 'Mailblaze browse request failed before a response') !== false, 'a transport error is logged');
+unlink($log_file);
 
 $decoded = json_decode($view_request['args']['body'], true);
 mailblaze_assert_same('shopper@example.com', $decoded['views'][0]['email'], 'email is in the JSON body');

@@ -56,8 +56,16 @@ class Mailblaze_WC_API_Client
 
         $response = wp_remote_request($url, $args);
         // Browse and link posts must not hold login, checkout, or opt-in.
+        // blocking false usually returns before a status exists. When the
+        // transport does include a 4xx or 5xx, record the code only.
         if (array_key_exists('blocking', $args) && $args['blocking'] === false) {
             if (is_wp_error($response)) {
+                error_log('Mailblaze browse request failed before a response');
+                return false;
+            }
+            $http_error = mailblaze_wc_browse_http_error(wp_remote_retrieve_response_code($response));
+            if ($http_error !== null) {
+                error_log('Mailblaze browse HTTP ' . $http_error);
                 return false;
             }
             return array('dispatched' => true);

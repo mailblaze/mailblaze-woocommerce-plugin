@@ -317,12 +317,18 @@ class MailBlaze_View_Tracking {
         if (isset($_COOKIE[$cookie_name]) && is_string($_COOKIE[$cookie_name])) {
             $anon = $_COOKIE[$cookie_name];
         }
-        $key = mailblaze_wc_rate_limit_key($ip, $anon);
-        $count = (int) get_transient($key);
-        if (!mailblaze_wc_rate_allow($count, 30)) {
+        $minted = class_exists('MailBlaze_Visitor') && MailBlaze_Visitor::anon_id_was_minted();
+        $buckets = mailblaze_wc_rate_buckets($ip, $anon, $minted);
+        $counts = array();
+        foreach ($buckets as $key) {
+            $counts[] = (int) get_transient($key);
+        }
+        if (mailblaze_wc_rate_blocked($counts, 30)) {
             return false;
         }
-        set_transient($key, $count + 1, 600);
+        foreach ($buckets as $key) {
+            set_transient($key, (int) get_transient($key) + 1, 600);
+        }
         return true;
     }
 }

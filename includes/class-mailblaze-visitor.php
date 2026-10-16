@@ -808,9 +808,79 @@ function mailblaze_wc_rate_limit_key($remote_addr, $anon_id) {
     return 'mb_view_rate_' . substr(hash('sha256', $ip . '|' . $anon), 0, 32);
 }
 
+/**
+ * Address ceiling always applies. A per-id bucket is added only for an id
+ * that arrived on the request. An id minted in this request is not a bucket:
+ * on_init writes a fresh UUID into $_COOKIE before the cap is checked.
+ *
+ * @param mixed $remote_addr
+ * @param mixed $anon_id
+ * @param bool $id_was_minted
+ * @return string[]
+ */
+function mailblaze_wc_rate_buckets($remote_addr, $anon_id, $id_was_minted) {
+    $keys = array(mailblaze_wc_rate_limit_key($remote_addr, ''));
+    $anon = is_string($anon_id) ? strtolower(trim($anon_id)) : '';
+    if (!$id_was_minted && mailblaze_wc_is_anon_id($anon)) {
+        $keys[] = mailblaze_wc_rate_limit_key($remote_addr, $anon);
+    }
+    return $keys;
+}
+
+/**
+ * @param array $counts
+ * @param int $limit
+ * @return bool
+ */
+function mailblaze_wc_rate_blocked($counts, $limit = 30) {
+    foreach ((array) $counts as $count) {
+        if (!mailblaze_wc_rate_allow((int) $count, $limit)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Account and checkout checkboxes post "1" when ticked. A present field
+ * whose value is "no" is not consent.
+ *
+ * @param mixed $raw
+ * @return string yes|no
+ */
+function mailblaze_wc_posted_optin($raw) {
+    if (is_array($raw)) {
+        return 'no';
+    }
+    if (!is_string($raw) && !is_numeric($raw)) {
+        return 'no';
+    }
+    $value = strtolower(trim((string) $raw));
+    if ($value === 'yes' || $value === '1') {
+        return 'yes';
+    }
+    return 'no';
+}
+
+/**
+ * Non-blocking requests usually return before a status exists (code 0).
+ * A real 4xx/5xx is the only failure we can see in that mode.
+ *
+ * @param mixed $code
+ * @return int|null
+ */
+function mailblaze_wc_browse_http_error($code) {
+    $code = (int) $code;
+    if ($code >= 400) {
+        return $code;
+    }
+    return null;
+}
+
 class MailBlaze_Visitor {
     private static $applied = false;
     private static $anon_id = null;
+    private static $anon_minted = false;
     private static $api_client = null;
     private static $transport = null;
     private static $sent_keys = array();
@@ -847,6 +917,19 @@ class MailBlaze_Visitor {
         return self::$anon_id;
     }
 
+    /**
+     * True when this request created mb_anon_id. The rate cap must not key
+     * on that fresh value, because a missing cookie would mint a new bucket.
+     *
+     * @return bool
+     */
+    public static function anon_id_was_minted() {
+        if (!self::$applied) {
+            self::on_init();
+        }
+        return self::$anon_minted;
+    }
+
     public static function on_init() {
         if (self::$applied) {
             return;
@@ -865,6 +948,7 @@ class MailBlaze_Visitor {
         );
         self::$applied = true;
         self::$anon_id = $decision['anon_id'];
+        self::$anon_minted = !empty($decision['set_cookie']);
         if (!empty($decision['set_cookie']) || !empty($decision['clear_cookie'])) {
             self::persist_cookie($decision);
         }
