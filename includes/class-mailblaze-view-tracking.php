@@ -312,7 +312,12 @@ class MailBlaze_View_Tracking {
             return true;
         }
         $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-        $key = 'mb_view_rate_' . substr(hash('sha256', $ip), 0, 32);
+        $anon = '';
+        $cookie_name = mailblaze_wc_anon_cookie_name();
+        if (isset($_COOKIE[$cookie_name]) && is_string($_COOKIE[$cookie_name])) {
+            $anon = $_COOKIE[$cookie_name];
+        }
+        $key = mailblaze_wc_rate_limit_key($ip, $anon);
         $count = (int) get_transient($key);
         if (!mailblaze_wc_rate_allow($count, 30)) {
             return false;

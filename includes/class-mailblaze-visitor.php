@@ -583,7 +583,9 @@ function mailblaze_wc_view_throttle_key($anon_id, $page, $product_id, $variant_i
  */
 function mailblaze_wc_select_views($events, $throttled, $now) {
     $window = mailblaze_wc_view_ttl();
-    if (is_array($throttled)) {
+    // An array callable such as array($tracker, 'is_view_throttled') is also an
+    // array. Treat callables first so that method is invoked.
+    if (!is_callable($throttled) && is_array($throttled)) {
         $snapshot = $throttled;
         $throttled = function ($key) use ($snapshot, $now) {
             return isset($snapshot[$key]) && $snapshot[$key] > $now;
@@ -707,15 +709,30 @@ function mailblaze_wc_visitor_link_event($input) {
 }
 
 /**
+ * Newsletter stitching only when the shopper ticked the box.
+ * An unticked box is 'no' and must not send source newsletter.
+ *
+ * @param mixed $optin
+ * @return bool
+ */
+function mailblaze_wc_newsletter_optin_links($optin) {
+    return $optin === 'yes';
+}
+
+/**
+ * Source is part of the key so a newsletter link does not drop login or checkout.
+ *
  * @param string $anon_id
  * @param mixed $email
  * @param mixed $mbclid
+ * @param mixed $source
  * @return string
  */
-function mailblaze_wc_link_throttle_key($anon_id, $email, $mbclid) {
+function mailblaze_wc_link_throttle_key($anon_id, $email, $mbclid, $source = '') {
     $email = is_string($email) ? strtolower($email) : '';
     $mbclid = is_string($mbclid) ? $mbclid : '';
-    return 'mb_link_' . substr(hash('sha256', $anon_id . '|' . $email . '|' . $mbclid), 0, 40);
+    $source = mailblaze_wc_link_source(is_string($source) ? $source : '');
+    return 'mb_link_' . substr(hash('sha256', $anon_id . '|' . $email . '|' . $mbclid . '|' . $source), 0, 40);
 }
 
 /**
@@ -772,6 +789,23 @@ function mailblaze_wc_ingest_status($nonce_ok, $consent, $sent_count) {
  */
 function mailblaze_wc_rate_allow($count, $limit = 30) {
     return $count < $limit;
+}
+
+/**
+ * Shared NAT addresses stay distinct per consented visitor.
+ * An id that is not a real anon id does not open another bucket.
+ *
+ * @param mixed $remote_addr
+ * @param mixed $anon_id
+ * @return string
+ */
+function mailblaze_wc_rate_limit_key($remote_addr, $anon_id) {
+    $ip = is_string($remote_addr) ? $remote_addr : '';
+    $anon = is_string($anon_id) ? strtolower(trim($anon_id)) : '';
+    if (!mailblaze_wc_is_anon_id($anon)) {
+        $anon = '';
+    }
+    return 'mb_view_rate_' . substr(hash('sha256', $ip . '|' . $anon), 0, 32);
 }
 
 class MailBlaze_Visitor {
@@ -862,7 +896,7 @@ class MailBlaze_Visitor {
         if (!$event) {
             return false;
         }
-        $key = mailblaze_wc_link_throttle_key($event['anon_id'], $event['email'], $event['mbclid']);
+        $key = mailblaze_wc_link_throttle_key($event['anon_id'], $event['email'], $event['mbclid'], $event['source']);
         if (self::throttle_hit($key)) {
             return true;
         }

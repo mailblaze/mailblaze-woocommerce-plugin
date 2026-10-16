@@ -51,15 +51,27 @@
         if (!pending.length || !window.fetch) {
             return;
         }
-        window.fetch(cfg.endpoint, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-WP-Nonce': cfg.nonce || ''
-            },
-            body: JSON.stringify({ views: pending.slice(0, 10) })
-        });
+        var body = JSON.stringify({ views: pending.slice(0, 10) });
+        function deliver(attempt) {
+            window.fetch(cfg.endpoint, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': cfg.nonce || ''
+                },
+                body: body
+            }).then(function (response) {
+                if ((!response || !response.ok) && attempt < 1) {
+                    deliver(attempt + 1);
+                }
+            }).catch(function () {
+                if (attempt < 1) {
+                    deliver(attempt + 1);
+                }
+            });
+        }
+        deliver(0);
     }
 
     post(cfg.views);

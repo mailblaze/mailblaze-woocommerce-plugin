@@ -217,7 +217,10 @@ class Mailblaze_WC_API_Client
         $path = function_exists('mailblaze_wc_browse_path')
             ? mailblaze_wc_browse_path('product-viewed')
             : '/ecommerce/product-viewed';
-        $response = $this->request($path, 'POST', $body, false);
+        $response = $this->request($path, 'POST', $body, false, array(
+            'blocking' => false,
+            'timeout' => 2,
+        ));
         if ($response === false) {
             throw new Exception('Failed to send product views to Mailblaze API');
         }
@@ -235,7 +238,10 @@ class Mailblaze_WC_API_Client
         $path = function_exists('mailblaze_wc_browse_path')
             ? mailblaze_wc_browse_path('visitor-linked')
             : '/ecommerce/visitor-linked';
-        $response = $this->request($path, 'POST', $body, false);
+        $response = $this->request($path, 'POST', $body, false, array(
+            'blocking' => false,
+            'timeout' => 2,
+        ));
         if ($response === false) {
             throw new Exception('Failed to send visitor link to Mailblaze API');
         }

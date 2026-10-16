@@ -205,6 +205,22 @@ $throttled = mailblaze_wc_prepare_view_batch('granted', $context, array($client_
 ), $now);
 mailblaze_assert_null($throttled, 'a recent view is not sent again');
 
+class Mailblaze_View_Throttle_Probe {
+    public $blocked_key = '';
+
+    public function is_view_throttled($key) {
+        return $key === $this->blocked_key;
+    }
+}
+
+$probe = new Mailblaze_View_Throttle_Probe();
+$probe->blocked_key = $throttle_key;
+$callable_throttled = mailblaze_wc_select_views(array($view), array($probe, 'is_view_throttled'), $now);
+mailblaze_assert_same(array(), $callable_throttled['views'], 'an array callable throttle is invoked');
+$probe->blocked_key = 'mb_view_other';
+$callable_open = mailblaze_wc_select_views(array($view), array($probe, 'is_view_throttled'), $now);
+mailblaze_assert_same(1, count($callable_open['views']), 'a callable throttle allows a different view');
+
 $many = array();
 for ($i = 1; $i <= 12; $i++) {
     $many[] = array('page' => 'product', 'product_id' => (string) $i);
@@ -250,6 +266,21 @@ mailblaze_assert_null($click_only['email'], 'click stitch can omit email');
 mailblaze_assert_same('mbclid', $click_only['source'], 'click source');
 mailblaze_assert_same('click.without.hmac', $click_only['mbclid'], 'unsigned click id is still forwarded');
 
+mailblaze_assert_same(true, mailblaze_wc_newsletter_optin_links('yes'), 'a ticked newsletter box can stitch');
+mailblaze_assert_same(false, mailblaze_wc_newsletter_optin_links('no'), 'an unticked newsletter box does not stitch');
+mailblaze_assert_same(false, mailblaze_wc_newsletter_optin_links(''), 'a missing newsletter choice does not stitch');
+$optin_src = file_get_contents(dirname(__DIR__) . '/includes/optin-handler.php');
+mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_newsletter_optin_links($new_optin)') !== false, 'account opt-in uses the ticked-box gate');
+mailblaze_assert_true(strpos($optin_src, 'mailblaze_wc_newsletter_optin_links($checkout_optin)') !== false, 'checkout opt-in uses the ticked-box gate');
+$newsletter_key = mailblaze_wc_link_throttle_key($anon, 'shopper@example.com', null, 'newsletter');
+$login_key = mailblaze_wc_link_throttle_key($anon, 'shopper@example.com', null, 'login');
+mailblaze_assert_true($newsletter_key !== $login_key, 'the link throttle key includes source');
+mailblaze_assert_same(
+    $newsletter_key,
+    mailblaze_wc_link_throttle_key($anon, 'Shopper@Example.com', null, 'newsletter'),
+    'the same source and email share one throttle key'
+);
+
 mailblaze_assert_null(mailblaze_wc_browse_url('https://commerce.test/api/hooks/', 'nope'), 'unknown browse route');
 $product_url = mailblaze_wc_browse_url('https://commerce.test/api/hooks/', 'product-viewed');
 $link_url = mailblaze_wc_browse_url('https://commerce.test/api/hooks', 'visitor-linked');
@@ -263,6 +294,12 @@ mailblaze_assert_same(204, mailblaze_wc_ingest_status(true, 'granted', 0), 'an e
 mailblaze_assert_same(202, mailblaze_wc_ingest_status(true, 'granted', 1), 'a sent view is accepted');
 mailblaze_assert_same(false, mailblaze_wc_rate_allow(30, 30), 'rate limit blocks the 31st call');
 mailblaze_assert_same(true, mailblaze_wc_rate_allow(29, 30), 'rate limit allows the 30th call');
+$ip_only = mailblaze_wc_rate_limit_key('203.0.113.5', '');
+$with_anon = mailblaze_wc_rate_limit_key('203.0.113.5', $anon);
+$other_visitor = mailblaze_wc_rate_limit_key('203.0.113.5', $other);
+mailblaze_assert_true($ip_only !== $with_anon, 'the rate limit key includes the anon id');
+mailblaze_assert_true($with_anon !== $other_visitor, 'two visitors behind one address do not share a bucket');
+mailblaze_assert_same($ip_only, mailblaze_wc_rate_limit_key('203.0.113.5', 'not-a-uuid'), 'an invalid anon id does not open a new bucket');
 
 $js = file_get_contents(dirname(__DIR__) . '/assets/js/mailblaze-views.js');
 mailblaze_assert_true(strpos($js, "method: 'POST'") !== false, 'the beacon is a POST');
@@ -274,6 +311,7 @@ mailblaze_assert_true(strpos($js, 'email') === false, 'the browser script does n
 mailblaze_assert_true(strpos($js, 'mb_anon_id') === false, 'the browser script does not read the anon cookie');
 mailblaze_assert_true(strpos($js, 'URLSearchParams') === false, 'the browser script does not build a query string');
 mailblaze_assert_true(preg_match('/[?&][A-Za-z0-9_]+=/', $js) !== 1, 'the browser script does not append query parameters');
+mailblaze_assert_true(strpos($js, '.catch(') !== false, 'a failed beacon is retried');
 
 function get_option($key, $default = false) {
     if ($key === 'mailblaze_wc_foreign_store_id') {
@@ -314,8 +352,10 @@ require dirname(__DIR__) . '/includes/api-client.php';
 $client = new Mailblaze_WC_API_Client('test-key');
 $sent_views = $client->send_product_views(array('views' => $with_email['views']));
 $sent_link = $client->send_visitor_link($link);
-mailblaze_assert_same(array('ok' => true), $sent_views, 'mocked product view HTTP succeeds');
-mailblaze_assert_same(array('ok' => true), $sent_link, 'mocked link HTTP succeeds');
+$sent_order = $client->send_event('order_created', array('FIELD_ORDER_ID' => '1'));
+mailblaze_assert_same(array('dispatched' => true), $sent_views, 'mocked product view HTTP is dispatched');
+mailblaze_assert_same(array('dispatched' => true), $sent_link, 'mocked link HTTP is dispatched');
+mailblaze_assert_same(array('ok' => true), $sent_order, 'mocked order event HTTP still returns the body');
 
 $view_request = $GLOBALS['mb_requests'][0];
 $link_request = $GLOBALS['mb_requests'][1];
@@ -327,6 +367,13 @@ mailblaze_assert_true(strpos($link_request['url'], 'shopper@example.com') === fa
 mailblaze_assert_true(strpos($view_request['url'], 'test-key') === false, 'api key stays out of the URL');
 mailblaze_assert_same('Bearer test-key', $view_request['args']['headers']['Authorization'], 'hooks auth is a bearer token');
 mailblaze_assert_same('wc_test_store', $view_request['args']['headers']['X-Store-Id'], 'foreign store id is the header');
+mailblaze_assert_same(false, $view_request['args']['blocking'], 'product view posts do not block the shopper');
+mailblaze_assert_same(2, $view_request['args']['timeout'], 'product view posts use a short timeout');
+mailblaze_assert_same(false, $link_request['args']['blocking'], 'link posts do not block the shopper');
+mailblaze_assert_same(2, $link_request['args']['timeout'], 'link posts use a short timeout');
+$order_request = $GLOBALS['mb_requests'][2];
+mailblaze_assert_same(30, $order_request['args']['timeout'], 'order events keep the 30 second timeout');
+mailblaze_assert_true(!array_key_exists('blocking', $order_request['args']), 'order events stay blocking');
 
 $decoded = json_decode($view_request['args']['body'], true);
 mailblaze_assert_same('shopper@example.com', $decoded['views'][0]['email'], 'email is in the JSON body');

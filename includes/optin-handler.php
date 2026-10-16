@@ -124,7 +124,7 @@ class Mailblaze_WC_Optin_Handler
         update_user_meta($user_id, 'mailblaze_optin', $new_optin);
 
         $user = get_userdata($user_id);
-        if ($user && !empty($user->user_email) && class_exists('MailBlaze_Visitor')) {
+        if (mailblaze_wc_newsletter_optin_links($new_optin) && $user && !empty($user->user_email) && class_exists('MailBlaze_Visitor')) {
             MailBlaze_Visitor::link_email($user->user_email, 'newsletter');
         }
         $api_key = get_option('mailblaze_wc_api_key', '');
@@ -221,7 +221,7 @@ class Mailblaze_WC_Optin_Handler
             return;
         }
 
-        if (class_exists('MailBlaze_Visitor')) {
+        if (mailblaze_wc_newsletter_optin_links($checkout_optin) && class_exists('MailBlaze_Visitor')) {
             MailBlaze_Visitor::link_email($customer_email, 'newsletter');
         }
 
