@@ -5,16 +5,75 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * A checkbox value counts as ticked only for an explicit grant.
+ *
+ * @param mixed $value
+ * @return bool
+ */
+function mailblaze_wc_checkout_optin_ticked( $value ) {
+    if ( $value === true || $value === 1 ) {
+        return true;
+    }
+    $value = strtolower( trim( (string) $value ) );
+    return in_array( $value, array( '1', 'yes', 'true', 'on' ), true );
+}
+
+/**
+ * Posted or saved checkout checkbox. Classic order review always includes the
+ * form, so a missing checkbox is unticked. A page load uses the saved value.
+ *
+ * @param array $input source, field_present, field_value, saved
+ * @return array{value:string,persist:?string}
+ */
+function mailblaze_wc_checkout_optin_signal( $input ) {
+    $input = is_array( $input ) ? $input : array();
+    $source = isset( $input['source'] ) ? (string) $input['source'] : '';
+    $present = ! empty( $input['field_present'] );
+    $saved = isset( $input['saved'] ) ? $input['saved'] : '';
+    if ( $source === 'order_review' || $present ) {
+        $ticked = $present && mailblaze_wc_checkout_optin_ticked( isset( $input['field_value'] ) ? $input['field_value'] : '' );
+        return array(
+            'value' => $ticked ? 'yes' : 'no',
+            'persist' => $ticked ? 'yes' : 'no',
+        );
+    }
+    if ( mailblaze_wc_checkout_optin_ticked( $saved ) ) {
+        return array(
+            'value' => 'yes',
+            'persist' => null,
+        );
+    }
+    return array(
+        'value' => '',
+        'persist' => null,
+    );
+}
+
+/**
+ * wp_remote_request args for checkout.started. Orders keep send_event.
+ *
+ * @return array
+ */
+function mailblaze_wc_checkout_started_http_args() {
+    return array(
+        'blocking' => false,
+        'timeout' => 2,
+    );
+}
+
+/**
  * Whether a checkout.started event may be recorded.
  *
  * The WP Consent API is the consent signal when a banner plugin has registered
  * a type. No registered type means consent is unknown, and unknown consent
  * records nothing. A known grant is marketing consent true.
  *
- * Without the Consent API, checkout tracking follows the other commerce events.
- * An explicit Mail Blaze opt-out (mailblaze_optin = no) is a known denial.
+ * Without the Consent API, record only an explicit grant: a logged-in user
+ * whose mailblaze_optin is yes, or a posted or saved mailblaze_checkout_optin
+ * that is ticked. Guests without that, an empty opt-in, and the opt-in option
+ * turned off record nothing.
  *
- * @param array $signals consent_api, consent_type, marketing_consent, mailblaze_optin
+ * @param array $signals consent_api, consent_type, marketing_consent, logged_in, mailblaze_optin, mailblaze_checkout_optin, optin_enabled
  * @return bool
  */
 function mailblaze_wc_checkout_consent_allowed( $signals ) {
@@ -27,11 +86,14 @@ function mailblaze_wc_checkout_consent_allowed( $signals ) {
         return isset( $signals['marketing_consent'] ) && $signals['marketing_consent'] === true;
     }
 
-    $optin = isset( $signals['mailblaze_optin'] ) ? (string) $signals['mailblaze_optin'] : '';
-    if ( $optin === 'no' ) {
+    if ( empty( $signals['optin_enabled'] ) ) {
         return false;
     }
-    return true;
+    $optin = isset( $signals['mailblaze_optin'] ) ? (string) $signals['mailblaze_optin'] : '';
+    if ( ! empty( $signals['logged_in'] ) && $optin === 'yes' ) {
+        return true;
+    }
+    return mailblaze_wc_checkout_optin_ticked( isset( $signals['mailblaze_checkout_optin'] ) ? $signals['mailblaze_checkout_optin'] : '' );
 }
 
 /**
@@ -44,13 +106,16 @@ function mailblaze_wc_read_checkout_consent_signals() {
         'consent_api' => function_exists( 'wp_get_consent_type' ) && function_exists( 'wp_has_consent' ),
         'consent_type' => null,
         'marketing_consent' => null,
+        'logged_in' => function_exists( 'is_user_logged_in' ) && is_user_logged_in(),
         'mailblaze_optin' => '',
+        'mailblaze_checkout_optin' => '',
+        'optin_enabled' => function_exists( 'get_option' ) && get_option( 'mailblaze_wc_enable_optin', '0' ) === '1',
     );
     if ( $signals['consent_api'] ) {
         $signals['consent_type'] = wp_get_consent_type();
         $signals['marketing_consent'] = wp_has_consent( 'marketing' );
     }
-    if ( function_exists( 'is_user_logged_in' ) && is_user_logged_in() && function_exists( 'get_user_meta' ) ) {
+    if ( $signals['logged_in'] && function_exists( 'get_user_meta' ) ) {
         $signals['mailblaze_optin'] = (string) get_user_meta( get_current_user_id(), 'mailblaze_optin', true );
     }
     return $signals;

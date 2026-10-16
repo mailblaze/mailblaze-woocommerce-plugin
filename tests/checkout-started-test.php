@@ -20,15 +20,95 @@ function mailblaze_assert_true($actual, $message) {
     }
 }
 
-mailblaze_assert_true(mailblaze_wc_checkout_consent_allowed(array(
+mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
     'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => false,
     'mailblaze_optin' => '',
-)), 'no consent API records checkout events like the other commerce hooks');
+    'mailblaze_checkout_optin' => '',
+)), 'a guest with an empty opt-in records nothing');
 
 mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
     'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => true,
+    'mailblaze_optin' => '',
+)), 'an empty account opt-in records nothing');
+
+mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => true,
     'mailblaze_optin' => 'no',
-)), 'explicit Mail Blaze opt-out is a known denial');
+)), 'an explicit Mail Blaze opt-out records nothing');
+
+mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => false,
+    'logged_in' => true,
+    'mailblaze_optin' => 'yes',
+    'mailblaze_checkout_optin' => 'yes',
+)), 'the opt-in option turned off records nothing');
+
+mailblaze_assert_true(mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => true,
+    'mailblaze_optin' => 'yes',
+)), 'a logged-in user with mailblaze_optin yes is an explicit grant');
+
+mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => false,
+    'mailblaze_optin' => 'yes',
+)), 'account opt-in on a guest does not grant checkout tracking');
+
+mailblaze_assert_true(mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'logged_in' => false,
+    'mailblaze_checkout_optin' => '1',
+)), 'a ticked checkout opt-in is an explicit grant');
+
+mailblaze_assert_true(mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'mailblaze_checkout_optin' => 'yes',
+)), 'a saved checkout opt-in of yes is an explicit grant');
+
+mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
+    'consent_api' => false,
+    'optin_enabled' => true,
+    'mailblaze_checkout_optin' => 'no',
+)), 'an unticked checkout opt-in records nothing');
+
+$review_unticked = mailblaze_wc_checkout_optin_signal(array(
+    'source' => 'order_review',
+    'field_present' => false,
+    'saved' => 'yes',
+));
+mailblaze_assert_same('no', $review_unticked['value'], 'a posted checkout form without the checkbox is unticked');
+mailblaze_assert_same('no', $review_unticked['persist'], 'an unticked post replaces a saved yes');
+
+$review_ticked = mailblaze_wc_checkout_optin_signal(array(
+    'source' => 'order_review',
+    'field_present' => true,
+    'field_value' => '1',
+));
+mailblaze_assert_same('yes', $review_ticked['value'], 'a posted checkout checkbox is a grant');
+
+$page_saved = mailblaze_wc_checkout_optin_signal(array(
+    'source' => 'page_load',
+    'field_present' => false,
+    'saved' => 'yes',
+));
+mailblaze_assert_same('yes', $page_saved['value'], 'a page load uses the saved checkout opt-in');
+mailblaze_assert_same(null, $page_saved['persist'], 'a page load does not rewrite the saved opt-in');
+
+$http = mailblaze_wc_checkout_started_http_args();
+mailblaze_assert_same(false, $http['blocking'], 'checkout.started does not block the checkout request');
+mailblaze_assert_same(2, $http['timeout'], 'checkout.started uses a two second timeout');
 
 mailblaze_assert_same(false, mailblaze_wc_checkout_consent_allowed(array(
     'consent_api' => true,

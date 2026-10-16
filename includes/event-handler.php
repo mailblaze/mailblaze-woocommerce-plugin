@@ -90,8 +90,8 @@ class Mailblaze_WC_Event_Handler {
 
     public function handle_checkout_order_review( $posted_data ) {
         $email = '';
+        $posted = array();
         if ( is_string( $posted_data ) && $posted_data !== '' ) {
-            $posted = array();
             parse_str( $posted_data, $posted );
             if ( ! empty( $posted['billing_email'] ) ) {
                 $email = sanitize_email( $posted['billing_email'] );
@@ -100,7 +100,10 @@ class Mailblaze_WC_Event_Handler {
         if ( $email === '' ) {
             $email = $this->checkout_email_from_session();
         }
-        $this->maybe_send_checkout_started( $email, 'order_review' );
+        $this->maybe_send_checkout_started( $email, 'order_review', array(
+            'field_present' => array_key_exists( 'mailblaze_checkout_optin', $posted ),
+            'field_value' => isset( $posted['mailblaze_checkout_optin'] ) ? $posted['mailblaze_checkout_optin'] : '',
+        ) );
     }
 
     public function handle_checkout_store_api( $customer, $request ) {
@@ -108,17 +111,40 @@ class Mailblaze_WC_Event_Handler {
         if ( is_object( $customer ) && method_exists( $customer, 'get_billing_email' ) ) {
             $email = $customer->get_billing_email();
         }
-        if ( $email === '' && is_object( $request ) && method_exists( $request, 'get_param' ) ) {
+        $field_present = false;
+        $field_value = '';
+        if ( is_object( $request ) && method_exists( $request, 'get_param' ) ) {
             $billing = $request->get_param( 'billing_address' );
-            if ( is_array( $billing ) && ! empty( $billing['email'] ) ) {
+            if ( $email === '' && is_array( $billing ) && ! empty( $billing['email'] ) ) {
                 $email = $billing['email'];
             }
+            $raw = $request->get_param( 'mailblaze_checkout_optin' );
+            if ( $raw !== null ) {
+                $field_present = true;
+                $field_value = $raw;
+            }
         }
-        $this->maybe_send_checkout_started( $email, 'store_api' );
+        $this->maybe_send_checkout_started( $email, 'store_api', array(
+            'field_present' => $field_present,
+            'field_value' => $field_value,
+        ) );
     }
 
-    private function maybe_send_checkout_started( $email, $source ) {
-        if ( ! function_exists( 'mailblaze_wc_checkout_consent_allowed' ) || ! mailblaze_wc_checkout_consent_allowed( mailblaze_wc_read_checkout_consent_signals() ) ) {
+    private function maybe_send_checkout_started( $email, $source, $field = array() ) {
+        $signals = function_exists( 'mailblaze_wc_read_checkout_consent_signals' ) ? mailblaze_wc_read_checkout_consent_signals() : array();
+        if ( function_exists( 'mailblaze_wc_checkout_optin_signal' ) ) {
+            $optin = mailblaze_wc_checkout_optin_signal( array(
+                'source' => $source,
+                'field_present' => ! empty( $field['field_present'] ),
+                'field_value' => isset( $field['field_value'] ) ? $field['field_value'] : '',
+                'saved' => $this->saved_checkout_optin(),
+            ) );
+            $signals['mailblaze_checkout_optin'] = $optin['value'];
+            if ( $optin['persist'] !== null ) {
+                $this->remember_checkout_optin( $optin['persist'] );
+            }
+        }
+        if ( ! function_exists( 'mailblaze_wc_checkout_consent_allowed' ) || ! mailblaze_wc_checkout_consent_allowed( $signals ) ) {
             return;
         }
         if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
@@ -130,11 +156,6 @@ class Mailblaze_WC_Event_Handler {
         }
         $email = is_string( $email ) ? sanitize_email( $email ) : '';
         if ( $email === '' ) {
-            return;
-        }
-        $dedupe = $checkout_id . '|' . strtolower( $email );
-        $sent = WC()->session ? WC()->session->get( 'mailblaze_checkout_started_key' ) : '';
-        if ( $sent === $dedupe ) {
             return;
         }
         $payload = mailblaze_wc_checkout_started_payload( array(
@@ -152,14 +173,34 @@ class Mailblaze_WC_Event_Handler {
         if ( ! $payload ) {
             return;
         }
+        $items_string = isset( $payload['FIELD_CART_ITEMS']['items_string'] ) ? (string) $payload['FIELD_CART_ITEMS']['items_string'] : '';
+        $dedupe = $checkout_id . '|' . strtolower( $email ) . '|' . (string) $payload['FIELD_CART_TOTAL'] . '|' . $items_string;
+        $sent = WC()->session ? WC()->session->get( 'mailblaze_checkout_started_key' ) : '';
+        if ( $sent === $dedupe ) {
+            return;
+        }
         try {
-            $this->api_client->send_event( 'checkout_started', $payload );
+            $this->api_client->send_checkout_started( $payload );
             if ( WC()->session ) {
                 WC()->session->set( 'mailblaze_checkout_started_key', $dedupe );
             }
         } catch ( Exception $e ) {
             error_log( 'Mailblaze Integration Error (checkout_started): ' . $e->getMessage() );
         }
+    }
+
+    private function saved_checkout_optin() {
+        if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+            return '';
+        }
+        return WC()->session->get( 'mailblaze_checkout_optin' );
+    }
+
+    private function remember_checkout_optin( $value ) {
+        if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+            return;
+        }
+        WC()->session->set( 'mailblaze_checkout_optin', $value );
     }
 
     private function checkout_identity() {
