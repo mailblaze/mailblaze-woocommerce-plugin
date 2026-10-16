@@ -206,6 +206,42 @@ class Mailblaze_WC_API_Client
         return $response;
     }
 
+    /**
+     * POST {hooks}/ecommerce/product-viewed — Phase 3B browse ingestion.
+     *
+     * @param array $body
+     * @return array|false
+     */
+    public function send_product_views($body)
+    {
+        $path = function_exists('mailblaze_wc_browse_path')
+            ? mailblaze_wc_browse_path('product-viewed')
+            : '/ecommerce/product-viewed';
+        $response = $this->request($path, 'POST', $body, false);
+        if ($response === false) {
+            throw new Exception('Failed to send product views to Mailblaze API');
+        }
+        return $response;
+    }
+
+    /**
+     * POST {hooks}/ecommerce/visitor-linked — anon id stitched to an email or mbclid.
+     *
+     * @param array $body
+     * @return array|false
+     */
+    public function send_visitor_link($body)
+    {
+        $path = function_exists('mailblaze_wc_browse_path')
+            ? mailblaze_wc_browse_path('visitor-linked')
+            : '/ecommerce/visitor-linked';
+        $response = $this->request($path, 'POST', $body, false);
+        if ($response === false) {
+            throw new Exception('Failed to send visitor link to Mailblaze API');
+        }
+        return $response;
+    }
+
     // function to subscribe user to a mailing list
     public function update_subscriber($mailing_list_id, $user_data, $subscriber_uid = null)
     {
