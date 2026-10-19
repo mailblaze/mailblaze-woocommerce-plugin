@@ -30,6 +30,7 @@ require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/optin-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/smtp-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/class-mailblaze-visitor.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/class-mailblaze-view-tracking.php';
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/update-checker.php';
 
 class Mailblaze_WC_Integration {
     private $admin_settings;
@@ -480,6 +481,10 @@ class Mailblaze_WC_Integration {
         }
     }
 }
+
+// WordPress updates come from GitHub releases. Register this before the
+// integration boots so a store still sees updates if setup returns early.
+mailblaze_wc_register_update_checker();
 
 // Initialize the plugin
 new Mailblaze_WC_Integration();
