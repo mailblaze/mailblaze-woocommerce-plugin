@@ -69,6 +69,212 @@ class Mailblaze_WC_Event_Handler {
             add_action( 'woocommerce_cart_item_removed', [ $this, 'handle_cart_updated' ], 10, 0 );
             add_action( 'woocommerce_after_cart_item_quantity_update', [ $this, 'handle_cart_updated' ], 10, 0 );
         }
+
+        // Checkout started is on whenever the store is connected. It is not one of
+        // the optional hook checkboxes, which default to off. Classic checkout posts
+        // billing data through woocommerce_checkout_update_order_review. Block checkout
+        // does not fire that hook; it updates the customer through the Store API.
+        // template_redirect covers a checkout page load when an email is already known.
+        // Repeats for the same cart id and email are not sent again.
+        add_action( 'template_redirect', [ $this, 'handle_checkout_page_load' ] );
+        add_action( 'woocommerce_checkout_update_order_review', [ $this, 'handle_checkout_order_review' ] );
+        add_action( 'woocommerce_store_api_checkout_update_customer_from_request', [ $this, 'handle_checkout_store_api' ], 10, 2 );
+    }
+
+    public function handle_checkout_page_load() {
+        if ( ! function_exists( 'is_checkout' ) || ! is_checkout() || ( function_exists( 'is_order_received_page' ) && is_order_received_page() ) ) {
+            return;
+        }
+        $this->maybe_send_checkout_started( $this->checkout_email_from_session(), 'page_load' );
+    }
+
+    public function handle_checkout_order_review( $posted_data ) {
+        $email = '';
+        $posted = array();
+        if ( is_string( $posted_data ) && $posted_data !== '' ) {
+            parse_str( $posted_data, $posted );
+            if ( ! empty( $posted['billing_email'] ) ) {
+                $email = sanitize_email( $posted['billing_email'] );
+            }
+        }
+        if ( $email === '' ) {
+            $email = $this->checkout_email_from_session();
+        }
+        $this->maybe_send_checkout_started( $email, 'order_review', array(
+            'field_present' => array_key_exists( 'mailblaze_checkout_optin', $posted ),
+            'field_value' => isset( $posted['mailblaze_checkout_optin'] ) ? $posted['mailblaze_checkout_optin'] : '',
+        ) );
+    }
+
+    public function handle_checkout_store_api( $customer, $request ) {
+        $email = '';
+        if ( is_object( $customer ) && method_exists( $customer, 'get_billing_email' ) ) {
+            $email = $customer->get_billing_email();
+        }
+        $field_present = false;
+        $field_value = '';
+        if ( is_object( $request ) && method_exists( $request, 'get_param' ) ) {
+            $billing = $request->get_param( 'billing_address' );
+            if ( $email === '' && is_array( $billing ) && ! empty( $billing['email'] ) ) {
+                $email = $billing['email'];
+            }
+            $raw = $request->get_param( 'mailblaze_checkout_optin' );
+            if ( $raw !== null ) {
+                $field_present = true;
+                $field_value = $raw;
+            }
+        }
+        $this->maybe_send_checkout_started( $email, 'store_api', array(
+            'field_present' => $field_present,
+            'field_value' => $field_value,
+        ) );
+    }
+
+    private function maybe_send_checkout_started( $email, $source, $field = array() ) {
+        $signals = function_exists( 'mailblaze_wc_read_checkout_consent_signals' ) ? mailblaze_wc_read_checkout_consent_signals() : array();
+        if ( function_exists( 'mailblaze_wc_checkout_optin_signal' ) ) {
+            $optin = mailblaze_wc_checkout_optin_signal( array(
+                'source' => $source,
+                'field_present' => ! empty( $field['field_present'] ),
+                'field_value' => isset( $field['field_value'] ) ? $field['field_value'] : '',
+                'saved' => $this->saved_checkout_optin(),
+            ) );
+            $signals['mailblaze_checkout_optin'] = $optin['value'];
+            if ( $optin['persist'] !== null ) {
+                $this->remember_checkout_optin( $optin['persist'] );
+            }
+        }
+        if ( ! function_exists( 'mailblaze_wc_checkout_consent_allowed' ) || ! mailblaze_wc_checkout_consent_allowed( $signals ) ) {
+            return;
+        }
+        if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
+            return;
+        }
+        $checkout_id = $this->checkout_identity();
+        if ( $checkout_id === '' ) {
+            return;
+        }
+        $email = is_string( $email ) ? sanitize_email( $email ) : '';
+        if ( $email === '' ) {
+            return;
+        }
+        $payload = mailblaze_wc_checkout_started_payload( array(
+            'checkout_id' => $checkout_id,
+            'cart_id' => WC()->session ? (string) WC()->session->get( 'mailblaze_cart_id' ) : '',
+            'email' => $email,
+            'currency' => function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : '',
+            'total' => WC()->cart->get_total( 'raw' ),
+            'items' => $this->checkout_line_rows( WC()->cart ),
+            'created' => gmdate( 'c' ),
+            'list_uid' => $this->mailing_list_id,
+            'store_id' => $this->store_id,
+            'source' => $source,
+        ) );
+        if ( ! $payload ) {
+            return;
+        }
+        $items_string = isset( $payload['FIELD_CART_ITEMS']['items_string'] ) ? (string) $payload['FIELD_CART_ITEMS']['items_string'] : '';
+        $dedupe = $checkout_id . '|' . strtolower( $email ) . '|' . (string) $payload['FIELD_CART_TOTAL'] . '|' . $items_string;
+        $sent = WC()->session ? WC()->session->get( 'mailblaze_checkout_started_key' ) : '';
+        if ( $sent === $dedupe ) {
+            return;
+        }
+        try {
+            $this->api_client->send_checkout_started( $payload );
+            if ( WC()->session ) {
+                WC()->session->set( 'mailblaze_checkout_started_key', $dedupe );
+            }
+        } catch ( Exception $e ) {
+            error_log( 'Mailblaze Integration Error (checkout_started): ' . $e->getMessage() );
+        }
+    }
+
+    private function saved_checkout_optin() {
+        if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+            return '';
+        }
+        return WC()->session->get( 'mailblaze_checkout_optin' );
+    }
+
+    private function remember_checkout_optin( $value ) {
+        if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+            return;
+        }
+        WC()->session->set( 'mailblaze_checkout_optin', $value );
+    }
+
+    private function checkout_identity() {
+        if ( ! WC()->session ) {
+            return '';
+        }
+        $cart_id = WC()->session->get( 'mailblaze_cart_id' );
+        if ( ! empty( $cart_id ) ) {
+            return (string) $cart_id;
+        }
+        if ( method_exists( WC()->session, 'get_customer_id' ) ) {
+            $customer_id = WC()->session->get_customer_id();
+            if ( ! empty( $customer_id ) ) {
+                return (string) $customer_id;
+            }
+        }
+        return '';
+    }
+
+    private function checkout_email_from_session() {
+        $user = wp_get_current_user();
+        if ( $user && $user->ID && $user->user_email ) {
+            return $user->user_email;
+        }
+        if ( function_exists( 'WC' ) && WC()->customer && method_exists( WC()->customer, 'get_billing_email' ) ) {
+            $email = WC()->customer->get_billing_email();
+            if ( $email ) {
+                return $email;
+            }
+        }
+        if ( function_exists( 'WC' ) && WC()->checkout() && method_exists( WC()->checkout(), 'get_value' ) ) {
+            $email = WC()->checkout()->get_value( 'billing_email' );
+            if ( $email ) {
+                return $email;
+            }
+        }
+        return '';
+    }
+
+    private function checkout_line_rows( $cart_object ) {
+        $rows = array();
+        if ( ! $cart_object ) {
+            return $rows;
+        }
+        foreach ( $cart_object->get_cart() as $cart_item ) {
+            $product = isset( $cart_item['data'] ) ? $cart_item['data'] : null;
+            if ( ! $product instanceof WC_Product ) {
+                continue;
+            }
+            $variation_id = ! empty( $cart_item['variation_id'] ) ? (int) $cart_item['variation_id'] : 0;
+            $parent_id = $variation_id && method_exists( $product, 'get_parent_id' ) ? (int) $product->get_parent_id() : (int) $product->get_id();
+            if ( $parent_id === 0 ) {
+                $parent_id = (int) $product->get_id();
+            }
+            $parent_name = '';
+            if ( $variation_id && function_exists( 'wc_get_product' ) ) {
+                $parent = wc_get_product( $parent_id );
+                if ( $parent instanceof WC_Product ) {
+                    $parent_name = $parent->get_name();
+                }
+            }
+            $qty = isset( $cart_item['quantity'] ) ? (int) $cart_item['quantity'] : 0;
+            $rows[] = array(
+                'product_id' => $parent_id,
+                'variation_id' => $variation_id,
+                'name' => $product->get_name(),
+                'parent_name' => $parent_name,
+                'quantity' => $qty,
+                'total' => isset( $cart_item['line_total'] ) ? (float) $cart_item['line_total'] : 0,
+                'sku' => $product->get_sku(),
+                'image' => $this->get_product_image_url( $product ),
+            );
+        }
+        return $rows;
     }
 
     public function handle_new_order( $order_id ) {

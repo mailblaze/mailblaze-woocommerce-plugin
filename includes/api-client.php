@@ -23,9 +23,10 @@ class Mailblaze_WC_API_Client
         $this->hooks_api_base = getenv('MAILBLAZE_HOOKS_API_BASE') ?: 'https://control.mailblaze.com/api/hooks';
     }
 
-    private function request($endpoint, $method = 'GET', $data = [], $is_ecommerce = true)
+    private function request($endpoint, $method = 'GET', $data = [], $is_ecommerce = true, $overrides = array())
     {
-        $url = ($is_ecommerce ? $this->ecommerce_api_base : $this->hooks_api_base) . $endpoint;
+        $base = rtrim($is_ecommerce ? $this->ecommerce_api_base : $this->hooks_api_base, '/');
+        $url = $base . $endpoint;
 
         $headers = [
             'Content-Type' => 'application/json',
@@ -44,11 +45,23 @@ class Mailblaze_WC_API_Client
             'headers' => $headers,
             'timeout' => 30,
         ];
+        if (is_array($overrides)) {
+            foreach ($overrides as $key => $value) {
+                $args[$key] = $value;
+            }
+        }
         if (!empty($data)) {
             $args['body'] = wp_json_encode($data);
         }
 
         $response = wp_remote_request($url, $args);
+        // Browse and link posts must not hold login, checkout, or opt-in.
+        if (array_key_exists('blocking', $args) && $args['blocking'] === false) {
+            if (is_wp_error($response)) {
+                return false;
+            }
+            return array('dispatched' => true);
+        }
         if (is_wp_error($response)) {
             return false;
         }
@@ -236,5 +249,23 @@ class Mailblaze_WC_API_Client
     {
         $response = $this->request("/ecommerce/products?page={$page}&limit={$limit}", 'GET');
         return $response ? $response['products'] : [];
+    }
+
+    public function send_checkout_started($data)
+    {
+        $payload = [
+            'event_type' => 'checkout_started',
+            'data' => $data,
+            'platform' => 'woocommerce'
+        ];
+        $http_args = function_exists('mailblaze_wc_checkout_started_http_args')
+            ? mailblaze_wc_checkout_started_http_args()
+            : array('blocking' => false, 'timeout' => 2);
+        $response = $this->request('/trigger', 'POST', $payload, false, $http_args);
+        if ($response === false) {
+            throw new Exception('Failed to send event to Mailblaze API');
+        }
+
+        return $response;
     }
 }
