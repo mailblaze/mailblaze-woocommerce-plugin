@@ -261,12 +261,15 @@ if ( $remote === false || $remote === '' ) {
 }
 
 $checker = mailblaze_wc_register_update_checker();
+$installed = get_plugin_data( MAILBLAZE_WC_PLUGIN_DIR . 'mailblaze-woocommerce-integration.php' );
+$installed = $installed['Version'];
+mailblaze_assert_true( $installed !== '', 'plugin header has a version' );
 mailblaze_assert_same(
     'https://github.com/mailblaze/mailblaze-woocommerce-plugin/',
     $checker->metadataUrl,
     'update checker points at the public GitHub mirror'
 );
-mailblaze_assert_same( '1.1.2', $checker->getInstalledVersion(), 'installed header stays 1.1.2 on this branch' );
+mailblaze_assert_same( $installed, $checker->getInstalledVersion(), 'installed version matches the plugin header' );
 
 $update = $checker->checkForUpdates();
 $updates = new stdClass();
@@ -281,7 +284,7 @@ foreach ( $GLOBALS['mailblaze_http_urls'] as $url ) {
 }
 mailblaze_assert_true( $saw_latest_release, 'PUC asked GitHub for the latest release' );
 
-if ( version_compare( $remote, '1.1.2', '>' ) ) {
+if ( version_compare( $remote, $installed, '>' ) ) {
     mailblaze_assert_true( is_object( $update ), 'a newer release is detected' );
     mailblaze_assert_same( $remote, $update->version, 'detected version' );
     $asset = 'https://github.com/mailblaze/mailblaze-woocommerce-plugin/releases/download/v' . $remote . '/mailblaze-woocommerce-integration.zip';

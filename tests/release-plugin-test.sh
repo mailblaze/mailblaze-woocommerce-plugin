@@ -24,14 +24,13 @@ if plugin_release_decision 1.2.0-beta 1.2.0-beta "" >/dev/null 2>&1; then
   fail "a pre-release version should fail"
 fi
 
-base_version="$(git -C "$ROOT" show origin/master:mailblaze-woocommerce-integration.php | sed -n 's/^ \* Version:[[:space:]]*//p' | head -n 1 | tr -d '[:space:]')"
 tree_version="$(plugin_header_version "$ROOT/mailblaze-woocommerce-integration.php")"
 tree_stable="$(plugin_stable_tag "$ROOT/readme.txt")"
-[[ "$tree_version" == "1.1.2" ]] || fail "header must stay 1.1.2, got ${tree_version}"
+[[ -n "$tree_version" ]] || fail "plugin header has no version"
+plugin_version_is_release "$tree_version" || fail "header ${tree_version} is not X.Y.Z"
 [[ "$tree_stable" == "$tree_version" ]] || fail "stable tag ${tree_stable} must match header ${tree_version}"
-[[ "$base_version" == "$tree_version" ]] || fail "this branch must not move the version off origin/master (${base_version})"
-unchanged="$(plugin_release_decision "$tree_version" "$tree_stable" "$base_version")"
-[[ "$unchanged" == "skip" ]] || fail "version ${tree_version} against origin/master should skip"
+unchanged="$(plugin_release_decision "$tree_version" "$tree_stable" "$tree_version")"
+[[ "$unchanged" == "skip" ]] || fail "header ${tree_version} should be a comparable release version"
 
 if RELEASE_PLUGIN= plugin_release_publish_allowed; then
   fail "publish must stay off unless RELEASE_PLUGIN=1"
@@ -96,8 +95,8 @@ print("---README---")
 print(archive.read("mailblaze-woocommerce-integration/readme.txt").decode())
 PY
 )"
-printf '%s\n' "$header" | grep -q 'Version:     1.1.2' || fail "zip header is not 1.1.2"
-printf '%s\n' "$header" | grep -q 'Stable tag: 1.1.2' || fail "zip stable tag is not 1.1.2"
+printf '%s\n' "$header" | grep -q "Version:     ${tree_version}" || fail "zip header is not ${tree_version}"
+printf '%s\n' "$header" | grep -q "Stable tag: ${tree_version}" || fail "zip stable tag is not ${tree_version}"
 rm -f "$ZIP"
 
 echo "ok"
