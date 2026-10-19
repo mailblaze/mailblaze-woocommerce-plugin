@@ -119,11 +119,15 @@ class Mailblaze_WC_Optin_Handler
     public function save_optin_field($user_id)
     {
         error_log('Mailblaze: Saving opt-in field for user ' . $user_id);
-        $new_optin = isset($_POST['mailblaze_optin']) ? 'yes' : 'no';
+        $posted_optin = isset($_POST['mailblaze_optin']) ? wp_unslash($_POST['mailblaze_optin']) : null;
+        $new_optin = mailblaze_wc_posted_optin($posted_optin);
         $old_optin = get_user_meta($user_id, 'mailblaze_optin', true);
         update_user_meta($user_id, 'mailblaze_optin', $new_optin);
 
         $user = get_userdata($user_id);
+        if (mailblaze_wc_newsletter_optin_links($new_optin) && $user && !empty($user->user_email) && class_exists('MailBlaze_Visitor')) {
+            MailBlaze_Visitor::link_email($user->user_email, 'newsletter');
+        }
         $api_key = get_option('mailblaze_wc_api_key', '');
 
         if (!empty($api_key) && !empty($this->mailing_list_id)) {
@@ -194,7 +198,8 @@ class Mailblaze_WC_Optin_Handler
         }
         $already_processed = true;
 
-        $checkout_optin = !empty($_POST['mailblaze_checkout_optin']) ? 'yes' : 'no';
+        $posted_checkout_optin = isset($_POST['mailblaze_checkout_optin']) ? wp_unslash($_POST['mailblaze_checkout_optin']) : null;
+        $checkout_optin = mailblaze_wc_posted_optin($posted_checkout_optin);
 
         $order = wc_get_order($order_id);
         if (!$order) {
@@ -216,6 +221,10 @@ class Mailblaze_WC_Optin_Handler
         if (empty($customer_email)) {
             error_log('Mailblaze: No customer email found for checkout opt-in');
             return;
+        }
+
+        if (mailblaze_wc_newsletter_optin_links($checkout_optin) && class_exists('MailBlaze_Visitor')) {
+            MailBlaze_Visitor::link_email($customer_email, 'newsletter');
         }
 
         $api_key = get_option('mailblaze_wc_api_key', '');

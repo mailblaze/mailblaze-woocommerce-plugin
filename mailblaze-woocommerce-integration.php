@@ -28,6 +28,8 @@ require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/checkout-started.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/event-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/optin-handler.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/smtp-handler.php';
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/class-mailblaze-visitor.php';
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/class-mailblaze-view-tracking.php';
 
 class Mailblaze_WC_Integration {
     private $admin_settings;
@@ -35,6 +37,7 @@ class Mailblaze_WC_Integration {
     private $optin_handler;
     private $api_client;
     private $smtp_handler;
+    private $view_tracking;
 
     public function __construct() {
         // Initialize admin settings
@@ -45,6 +48,7 @@ class Mailblaze_WC_Integration {
         if (!empty($api_key)) {
             $this->api_client = new Mailblaze_WC_API_Client($api_key);
             $this->event_handler = new Mailblaze_WC_Event_Handler();
+            $this->view_tracking = new MailBlaze_View_Tracking($this->api_client);
         }
 
         // Initialize opt-in handler

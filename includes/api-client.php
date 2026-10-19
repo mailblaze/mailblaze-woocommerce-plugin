@@ -56,8 +56,16 @@ class Mailblaze_WC_API_Client
 
         $response = wp_remote_request($url, $args);
         // Browse and link posts must not hold login, checkout, or opt-in.
+        // blocking false usually returns before a status exists. When the
+        // transport does include a 4xx or 5xx, record the code only.
         if (array_key_exists('blocking', $args) && $args['blocking'] === false) {
             if (is_wp_error($response)) {
+                error_log('Mailblaze browse request failed before a response');
+                return false;
+            }
+            $http_error = mailblaze_wc_browse_http_error(wp_remote_retrieve_response_code($response));
+            if ($http_error !== null) {
+                error_log('Mailblaze browse HTTP ' . $http_error);
                 return false;
             }
             return array('dispatched' => true);
@@ -203,6 +211,48 @@ class Mailblaze_WC_API_Client
             throw new Exception('Failed to send event to Mailblaze API');
         }
 
+        return $response;
+    }
+
+    /**
+     * POST {hooks}/ecommerce/product-viewed — Phase 3B browse ingestion.
+     *
+     * @param array $body
+     * @return array|false
+     */
+    public function send_product_views($body)
+    {
+        $path = function_exists('mailblaze_wc_browse_path')
+            ? mailblaze_wc_browse_path('product-viewed')
+            : '/ecommerce/product-viewed';
+        $response = $this->request($path, 'POST', $body, false, array(
+            'blocking' => false,
+            'timeout' => 2,
+        ));
+        if ($response === false) {
+            throw new Exception('Failed to send product views to Mailblaze API');
+        }
+        return $response;
+    }
+
+    /**
+     * POST {hooks}/ecommerce/visitor-linked — anon id stitched to an email or mbclid.
+     *
+     * @param array $body
+     * @return array|false
+     */
+    public function send_visitor_link($body)
+    {
+        $path = function_exists('mailblaze_wc_browse_path')
+            ? mailblaze_wc_browse_path('visitor-linked')
+            : '/ecommerce/visitor-linked';
+        $response = $this->request($path, 'POST', $body, false, array(
+            'blocking' => false,
+            'timeout' => 2,
+        ));
+        if ($response === false) {
+            throw new Exception('Failed to send visitor link to Mailblaze API');
+        }
         return $response;
     }
 
