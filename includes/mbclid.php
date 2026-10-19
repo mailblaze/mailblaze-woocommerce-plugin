@@ -162,8 +162,72 @@ function mailblaze_wc_with_mbclid_field($data, $mbclid) {
 }
 
 /**
+ * Hand a newly stored click id to the visitor module. No-op until that class is loaded.
+ *
+ * @param string|null $token
+ */
+function mailblaze_wc_link_captured_click($token) {
+    if (!is_string($token) || $token === '' || !class_exists('MailBlaze_Visitor', false)) {
+        return;
+    }
+    MailBlaze_Visitor::link_click($token);
+}
+
+/**
+ * Hand the checkout click id to the visitor module while the session still holds it.
+ *
+ * @param object|null $order
+ * @param string|null $token
+ */
+function mailblaze_wc_link_checkout_click($order, $token) {
+    if (!is_string($token) || $token === '' || !class_exists('MailBlaze_Visitor', false)) {
+        return;
+    }
+    $email = '';
+    if (is_object($order) && method_exists($order, 'get_billing_email')) {
+        $billing = $order->get_billing_email();
+        $email = is_string($billing) ? $billing : '';
+    }
+    MailBlaze_Visitor::link_email($email, 'checkout', $token);
+}
+
+/**
+ * True while checkout is still inside the order-processed action, before priority 20.
+ *
+ * @return bool
+ */
+function mailblaze_wc_mbclid_visitor_link_pending() {
+    if (!function_exists('doing_action')) {
+        return false;
+    }
+    return doing_action('woocommerce_checkout_order_processed')
+        || doing_action('woocommerce_store_api_checkout_order_processed');
+}
+
+/**
+ * Drop the session click id after the priority 20 checkout visitor link has run.
+ * Does nothing unless this request attached a token and asked for the clear.
+ */
+function mailblaze_wc_clear_mbclid_session_after_visitor() {
+    if (empty($GLOBALS['mailblaze_wc_clear_mbclid_after_visitor'])) {
+        return;
+    }
+    unset($GLOBALS['mailblaze_wc_clear_mbclid_after_visitor']);
+    if (!function_exists('WC')) {
+        return;
+    }
+    $wc = WC();
+    if (!is_object($wc) || !isset($wc->session) || !is_object($wc->session) || !method_exists($wc->session, 'set')) {
+        return;
+    }
+    $wc->session->set('mailblaze_mbclid', null);
+}
+
+/**
  * Write _mailblaze_mbclid during checkout (and thank-you, if checkout did not).
- * Clears the session only when this call is what attached the token.
+ * When this call attaches the token, the visitor module receives it before the
+ * session is cleared. During checkout the clear waits until priority 30 so the
+ * priority 20 visitor link still sees the click id.
  *
  * @param object|null $order
  */
@@ -172,13 +236,11 @@ function mailblaze_wc_persist_order_mbclid($order) {
         return;
     }
 
-    $session = null;
     $session_token = null;
     if (function_exists('WC')) {
         $wc = WC();
         if (is_object($wc) && isset($wc->session) && is_object($wc->session) && method_exists($wc->session, 'get')) {
-            $session = $wc->session;
-            $session_token = $session->get('mailblaze_mbclid');
+            $session_token = $wc->session->get('mailblaze_mbclid');
         }
     }
 
@@ -194,7 +256,13 @@ function mailblaze_wc_persist_order_mbclid($order) {
             $order->save();
         }
     }
-    if (!empty($decision['clear_session']) && $session && method_exists($session, 'set')) {
-        $session->set('mailblaze_mbclid', null);
+    if (empty($decision['clear_session'])) {
+        return;
+    }
+
+    mailblaze_wc_link_checkout_click($order, $decision['meta']);
+    $GLOBALS['mailblaze_wc_clear_mbclid_after_visitor'] = true;
+    if (!mailblaze_wc_mbclid_visitor_link_pending()) {
+        mailblaze_wc_clear_mbclid_session_after_visitor();
     }
 }

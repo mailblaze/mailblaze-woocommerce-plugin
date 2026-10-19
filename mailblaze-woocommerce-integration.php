@@ -79,8 +79,12 @@ class Mailblaze_WC_Integration {
         // Capture conversion click ids onto the Woo session (same visit only).
         add_action('woocommerce_init', [$this, 'capture_mbclid']);
         // Classic checkout. Block checkout passes the order as the first argument.
+        // Priority 10 writes order meta and hands the click id to the visitor module.
+        // Priority 20 (MailBlaze_Visitor) still reads that session value. Priority 30 clears it.
         add_action('woocommerce_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 3);
         add_action('woocommerce_store_api_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 1);
+        add_action('woocommerce_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);
+        add_action('woocommerce_store_api_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);
     }
 
     public function capture_mbclid() {
@@ -102,6 +106,7 @@ class Mailblaze_WC_Integration {
             WC()->session->set_customer_session_cookie(true);
         }
         WC()->session->set('mailblaze_mbclid', $mbclid);
+        mailblaze_wc_link_captured_click($mbclid);
     }
 
     /**

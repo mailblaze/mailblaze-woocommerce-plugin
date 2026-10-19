@@ -108,6 +108,7 @@ class Mailblaze_WC_Fake_Woo {
 class Mailblaze_WC_Fake_Order {
     public $meta = array();
     public $saves = 0;
+    public $email = 'shopper@example.com';
     public function get_meta($key) {
         return array_key_exists($key, $this->meta) ? $this->meta[$key] : '';
     }
@@ -117,24 +118,63 @@ class Mailblaze_WC_Fake_Order {
     public function save() {
         $this->saves++;
     }
+    public function get_billing_email() {
+        return $this->email;
+    }
 }
 function WC() {
     global $mailblaze_wc_fake;
     return $mailblaze_wc_fake;
 }
 
+$mailblaze_wc_current_action = '';
+function doing_action($hook) {
+    global $mailblaze_wc_current_action;
+    return $mailblaze_wc_current_action === $hook;
+}
+
+class MailBlaze_Visitor {
+    public static $clicks = array();
+    public static $links = array();
+    public static function link_click($mbclid) {
+        self::$clicks[] = $mbclid;
+    }
+    public static function link_email($email, $source = 'email', $mbclid = null) {
+        $session = (function_exists('WC') && WC() && WC()->session) ? WC()->session->get('mailblaze_mbclid') : null;
+        self::$links[] = array($email, $source, $mbclid, $session);
+    }
+}
+
 $previous_mbclid_secret = getenv('MBCLID_SECRET');
 putenv('MBCLID_SECRET');
+
+mailblaze_wc_link_captured_click($published);
+expect('capture hands the accepted token to link_click', MailBlaze_Visitor::$clicks === array($published));
+mailblaze_wc_link_captured_click('');
+mailblaze_wc_link_captured_click(null);
+expect('an empty handoff does not call link_click', count(MailBlaze_Visitor::$clicks) === 1);
 
 $mailblaze_wc_fake = new Mailblaze_WC_Fake_Woo();
 $mailblaze_wc_fake->session = new Mailblaze_WC_Fake_Session();
 $mailblaze_wc_fake->session->set('mailblaze_mbclid', $published);
+$mailblaze_wc_current_action = 'woocommerce_checkout_order_processed';
+unset($GLOBALS['mailblaze_wc_clear_mbclid_after_visitor']);
 $first_order = new Mailblaze_WC_Fake_Order();
 mailblaze_wc_persist_order_mbclid($first_order);
 expect('checkout_order_processed writes _mailblaze_mbclid', isset($first_order->meta['_mailblaze_mbclid']) && $first_order->meta['_mailblaze_mbclid'] === $published);
-expect('session token is cleared after it is attached', $mailblaze_wc_fake->session->get('mailblaze_mbclid') === null);
 expect('order meta is saved', $first_order->saves === 1);
+expect(
+    'checkout link_email runs while the session still holds the click id',
+    MailBlaze_Visitor::$links[0] === array('shopper@example.com', 'checkout', $published, $published)
+);
+expect('priority 10 leaves the session for the priority 20 visitor link', $mailblaze_wc_fake->session->get('mailblaze_mbclid') === $published);
+$visitor_would_read = $mailblaze_wc_fake->session->get('mailblaze_mbclid');
+expect('priority 20 checkout visitor link still sees the click id', $visitor_would_read === $published);
+mailblaze_wc_clear_mbclid_session_after_visitor();
+expect('priority 30 clears the session after the visitor link', $mailblaze_wc_fake->session->get('mailblaze_mbclid') === null);
+expect('the clear flag is consumed', empty($GLOBALS['mailblaze_wc_clear_mbclid_after_visitor']));
 
+$mailblaze_wc_current_action = '';
 $second_order = new Mailblaze_WC_Fake_Order();
 mailblaze_wc_persist_order_mbclid($second_order);
 expect('the next order does not inherit the cleared session', $second_order->get_meta('_mailblaze_mbclid') === '');
@@ -144,12 +184,53 @@ $mailblaze_wc_fake->session->set('mailblaze_mbclid', $other);
 mailblaze_wc_persist_order_mbclid($first_order);
 expect('a later session token does not overwrite order meta', $first_order->meta['_mailblaze_mbclid'] === $published);
 expect('a later session token stays for the next order', $mailblaze_wc_fake->session->get('mailblaze_mbclid') === $other);
+expect('keeping an existing order meta does not ask for a session clear', empty($GLOBALS['mailblaze_wc_clear_mbclid_after_visitor']));
+
+$mailblaze_wc_fake->session->set('mailblaze_mbclid', $published);
+$thankyou_order = new Mailblaze_WC_Fake_Order();
+$links_before_thankyou = count(MailBlaze_Visitor::$links);
+mailblaze_wc_persist_order_mbclid($thankyou_order);
+expect(
+    'outside checkout the handoff still happens before the session clear',
+    MailBlaze_Visitor::$links[$links_before_thankyou] === array('shopper@example.com', 'checkout', $published, $published)
+);
+expect('a thank-you attach clears the session in that same call', $mailblaze_wc_fake->session->get('mailblaze_mbclid') === null);
 
 $integration = file_get_contents(dirname(__DIR__) . '/mailblaze-woocommerce-integration.php');
+$visitor_source = file_get_contents(dirname(__DIR__) . '/includes/class-mailblaze-visitor.php');
+$readme = file_get_contents(dirname(__DIR__) . '/readme.txt');
 expect(
-    'meta is written from woocommerce_checkout_order_processed',
-    strpos($integration, "add_action('woocommerce_checkout_order_processed', [\$this, 'persist_mbclid_on_checkout']") !== false
+    'meta is written from woocommerce_checkout_order_processed at priority 10',
+    strpos($integration, "add_action('woocommerce_checkout_order_processed', [\$this, 'persist_mbclid_on_checkout'], 10, 3);") !== false
 );
+expect(
+    'store api persist stays at priority 10',
+    strpos($integration, "add_action('woocommerce_store_api_checkout_order_processed', [\$this, 'persist_mbclid_on_checkout'], 10, 1);") !== false
+);
+expect(
+    'classic checkout clear is priority 30 with no arguments',
+    strpos($integration, "add_action('woocommerce_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);") !== false
+);
+expect(
+    'store api clear is priority 30 with no arguments',
+    strpos($integration, "add_action('woocommerce_store_api_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);") !== false
+);
+expect(
+    'capture calls the visitor link_click handoff',
+    strpos($integration, 'mailblaze_wc_link_captured_click($mbclid);') !== false
+);
+expect(
+    'checkout visitor link stays at priority 20',
+    strpos($visitor_source, "add_action('woocommerce_checkout_order_processed', array('MailBlaze_Visitor', 'on_checkout'), 20, 1);") !== false
+    && strpos($visitor_source, "add_action('woocommerce_store_api_checkout_order_processed', array('MailBlaze_Visitor', 'on_checkout_order'), 20, 1);") !== false
+);
+expect(
+    'priority 20 reads the session click id',
+    strpos($visitor_source, "\$mbclid = \$wc->session->get('mailblaze_mbclid');") !== false
+);
+expect('plugin header is 1.2.0', strpos($integration, ' * Version:     1.2.0') !== false);
+expect('readme stable tag is 1.2.0', strpos($readme, "Stable tag: 1.2.0\n") !== false);
+expect('changelog lists mbclid and the update service', strpos($readme, '= 1.2.0 =') !== false && strpos($readme, 'mbclid') !== false && strpos($readme, 'GitHub releases') !== false);
 
 if ($previous_mbclid_secret === false) {
     putenv('MBCLID_SECRET');
