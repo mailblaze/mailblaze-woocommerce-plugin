@@ -2,6 +2,14 @@ clone:
   depth: full
 
 pipelines:
+  custom:
+    release-current-version:
+      - step:
+          name: Publish the current plugin version to GitHub
+          image: atlassian/default-image:4
+          script:
+            - export RELEASE_PLUGIN=1
+            - bash bin/release-plugin.sh --current
   branches:
     master:
       - step:
