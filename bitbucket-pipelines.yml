@@ -1,3 +1,6 @@
+clone:
+  depth: full
+
 pipelines:
   branches:
     master:
@@ -8,3 +11,9 @@ pipelines:
             - git push github master
           services:
             - docker
+      - step:
+          name: Release plugin zip when the version changes
+          image: atlassian/default-image:4
+          script:
+            - export RELEASE_PLUGIN=1
+            - bash bin/release-plugin.sh
