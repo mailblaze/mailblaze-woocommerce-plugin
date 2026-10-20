@@ -4,7 +4,7 @@
  * Plugin Name: Mailblaze WooCommerce Integration
  * Plugin URI:  https://mailblaze.com/
  * Description: Integrates WooCommerce with Mailblaze.
- * Version:     1.1.2
+ * Version:     1.2.0
  * Author:      Mail Blaze
  * Author URI:  https://mailblaze.com/
  * License:     GPL2
@@ -21,6 +21,7 @@ define('MAILBLAZE_WC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MAILBLAZE_WC_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include necessary files
+require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/mbclid.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/admin-settings.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/api-client.php';
 require_once MAILBLAZE_WC_PLUGIN_DIR . 'includes/order-line.php';
@@ -74,6 +75,54 @@ class Mailblaze_WC_Integration {
         
         // Enqueue frontend styles
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_styles']);
+
+        // Capture conversion click ids onto the Woo session (same visit only).
+        add_action('woocommerce_init', [$this, 'capture_mbclid']);
+        // Classic checkout. Block checkout passes the order as the first argument.
+        // Priority 10 writes order meta and hands the click id to the visitor module.
+        // Priority 20 (MailBlaze_Visitor) still reads that session value. Priority 30 clears it.
+        add_action('woocommerce_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 3);
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'persist_mbclid_on_checkout'], 10, 1);
+        add_action('woocommerce_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);
+        add_action('woocommerce_store_api_checkout_order_processed', 'mailblaze_wc_clear_mbclid_session_after_visitor', 30, 0);
+    }
+
+    public function capture_mbclid() {
+        if (empty($_GET['mbclid']) || !function_exists('WC') || !WC()->session) {
+            return;
+        }
+
+        $stored = WC()->session->get('mailblaze_mbclid');
+        $mbclid = mailblaze_wc_resolve_captured_mbclid(
+            wp_unslash($_GET['mbclid']),
+            $stored,
+            mailblaze_wc_mbclid_secret()
+        );
+        if ($mbclid === null || $mbclid === $stored) {
+            return;
+        }
+
+        if (!WC()->session->has_session()) {
+            WC()->session->set_customer_session_cookie(true);
+        }
+        WC()->session->set('mailblaze_mbclid', $mbclid);
+        mailblaze_wc_link_captured_click($mbclid);
+    }
+
+    /**
+     * Attach the session click id as soon as the order exists, before thank-you.
+     *
+     * @param int|object $order_id Order id, or the order object from the Store API hook.
+     * @param mixed $posted_data
+     * @param WC_Order|null $order
+     */
+    public function persist_mbclid_on_checkout($order_id, $posted_data = null, $order = null) {
+        if (is_object($order_id) && method_exists($order_id, 'get_meta')) {
+            $order = $order_id;
+        } elseif (!is_object($order) && function_exists('wc_get_order')) {
+            $order = wc_get_order($order_id);
+        }
+        mailblaze_wc_persist_order_mbclid($order);
     }
 
     public function activate() {

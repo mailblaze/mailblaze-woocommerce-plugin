@@ -2,14 +2,16 @@
 /**
  * Consent-gated visitor id for WooCommerce browse tracking.
  *
- * MBDI-1006 (mbclid, still the open 1.2.0 plugin PR) should call this module
- * instead of minting its own anonymous id:
+ * MBDI-1006 calls this module when it accepts an mbclid, before it clears
+ * the Woo session:
  *   MailBlaze_Visitor::get_anon_id()
  *   MailBlaze_Visitor::link_email($email, $source, $mbclid = null)
  *   MailBlaze_Visitor::link_click($mbclid)
  *   MailBlaze_Visitor::consent_state()
+ * Checkout visitor.linked stays on the order-processed hooks at priority 20.
+ * The session clear is priority 30, so link_order still reads the click id.
  *
- * This file does not parse or sign mbclid. The open PR owns that token.
+ * This file does not parse or sign mbclid. includes/mbclid.php owns that token.
  * A click id is forwarded as an opaque string on the link event.
  *
  * Phase 3B (mailblaze-commerce) ingests, on the same hooks host the plugin
