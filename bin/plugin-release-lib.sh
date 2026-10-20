@@ -50,6 +50,47 @@ plugin_release_publish_allowed() {
   [[ "${RELEASE_PLUGIN:-}" == "1" ]]
 }
 
+# Prints "push" when origin has no tag, "skip" when that tag already points
+# at this commit, or "reuse" when --current is republishing the same version
+# from the existing tag. Returns 1 when the tag must not be moved.
+plugin_origin_tag_action() {
+  local remote_commit=$1
+  local head_commit=$2
+  local remote_version=${3:-}
+  local version=${4:-}
+  local publish_current=${5:-0}
+  if [[ -z "$remote_commit" ]]; then
+    echo push
+    return 0
+  fi
+  if [[ "$remote_commit" == "$head_commit" ]]; then
+    echo skip
+    return 0
+  fi
+  if [[ "$publish_current" == "1" && -n "$remote_version" && "$remote_version" == "$version" ]]; then
+    echo reuse
+    return 0
+  fi
+  echo "Tag on origin points at ${remote_commit}, not ${head_commit}." >&2
+  return 1
+}
+
+# Removes a GitHub token from text that git may have echoed. Callers pass the
+# values; this function does not read the environment.
+plugin_redact_github_auth() {
+  set +x
+  local text=$1
+  local token=${2:-}
+  local username=${3:-}
+  if [[ -n "$token" ]]; then
+    text=${text//"$token"/***}
+  fi
+  if [[ -n "$username" ]]; then
+    text=${text//"${username}:"/***:}
+  fi
+  printf '%s\n' "$text" | sed -E 's#https://[^[:space:]@]+@#https://***@#g'
+}
+
 plugin_changelog_for_version() {
   local readme="$1"
   local version="$2"
